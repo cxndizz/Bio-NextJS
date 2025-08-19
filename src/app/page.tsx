@@ -65,40 +65,43 @@ const profile = {
 
 // --- หน้าเว็บหลัก ---
 export default function Home() {
-  // แก้ไข Type Error: ใช้ unknown as HTMLAudioElement เพื่อให้ตรงกับ RefObject<HTMLAudioElement>
-  const audioRef = useRef<HTMLAudioElement>(null as unknown as HTMLAudioElement);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [userInteracted, setUserInteracted] = useState(false);
 
   // ป้องกัน hydration error
   useEffect(() => {
     setMounted(true);
-  }, []);
-
-  // Listen for user interaction to enable audio features
-  useEffect(() => {
-    if (!mounted) return;
-
-    const handleUserInteraction = () => {
-      setUserInteracted(true);
+    
+    // สร้าง audio element ถ้ายังไม่มี
+    if (!audioRef.current) {
+      audioRef.current = document.createElement('audio');
+      audioRef.current.preload = "auto";
       
-      // Remove event listeners after first interaction
-      document.removeEventListener('click', handleUserInteraction);
-      document.removeEventListener('touchstart', handleUserInteraction);
-      document.removeEventListener('keydown', handleUserInteraction);
-    };
-
-    document.addEventListener('click', handleUserInteraction);
-    document.addEventListener('touchstart', handleUserInteraction);
-    document.addEventListener('keydown', handleUserInteraction);
-
-    return () => {
-      document.removeEventListener('click', handleUserInteraction);
-      document.removeEventListener('touchstart', handleUserInteraction);
-      document.removeEventListener('keydown', handleUserInteraction);
-    };
-  }, [mounted]);
+      // ตั้งค่าให้เล่นต่อเนื่องเมื่อเพลงจบ (นอกเหนือจากการใช้ event handler)
+      audioRef.current.onended = () => {
+        console.log("Audio element ended event triggered");
+        // ไม่ต้องทำอะไรเพิ่ม เพราะเราจัดการใน music-player แล้ว
+      };
+      
+      // พยายามเล่นเพลงอัตโนมัติหลังจากโหลดเพจ (1 วินาที)
+      setTimeout(() => {
+        if (audioRef.current) {
+          const playPromise = audioRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => {
+                setIsPlaying(true);
+                console.log("Auto-play successful");
+              })
+              .catch(error => {
+                console.log("Auto-play prevented by browser, user needs to interact first");
+              });
+          }
+        }
+      }, 1000);
+    }
+  }, []);
 
   // ส่งค่า state เหล่านี้ให้ MusicPlayer และ AudioVisualizer
   const handlePlayingStateChange = (playing: boolean) => {
@@ -133,7 +136,7 @@ export default function Home() {
   return (
     <main className="min-h-screen flex flex-col items-center p-6 bg-gradient-to-b from-gray-50/50 to-gray-100/50 dark:from-gray-900/50 dark:to-gray-800/50 text-gray-800 dark:text-white transition-colors duration-300">
       {/* Audio Visualizer - Enhanced bubble effects */}
-      <AudioVisualizer audioRef={audioRef} isPlaying={isPlaying} />
+      <AudioVisualizer isPlaying={isPlaying} audioRef={audioRef} />
       
       {/* ปุ่มสลับ Theme */}
       <div className="absolute top-4 right-4 z-10">
@@ -181,6 +184,9 @@ export default function Home() {
           <p className="mt-1">Made with Next.js & Tailwind CSS</p>
         </div>
       </div>
+      
+      {/* Audio element - เพิ่มเพื่อให้แน่ใจว่ามี audio element */}
+      <audio ref={audioRef} style={{ display: "none" }} />
     </main>
   );
 }

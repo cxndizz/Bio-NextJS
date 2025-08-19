@@ -19,7 +19,7 @@ interface Song {
 
 interface MusicPlayerProps {
   playlist: Song[];
-  audioRef: React.RefObject<HTMLAudioElement>;
+  audioRef: React.RefObject<HTMLAudioElement | null>;
   onPlayingChange?: (isPlaying: boolean) => void;
 }
 
@@ -29,17 +29,10 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.7);
-  const [isMuted, setIsMuted] = useState(true); // เริ่มต้นเป็น muted เพื่อให้ autoplay ทำงาน
+  const [isMuted, setIsMuted] = useState(false);
   const [showPlaylist, setShowPlaylist] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [autoplayAttempted, setAutoplayAttempted] = useState(false);
-  const [userInteracted, setUserInteracted] = useState(false);
-  const [isAudioReady, setIsAudioReady] = useState(false);
-  const [isTrackChanging, setIsTrackChanging] = useState(false);
-  const [showUnmutePrompt, setShowUnmutePrompt] = useState(false);
-  const playbackPromiseRef = useRef<Promise<void> | null>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const { theme } = useTheme();
   
@@ -48,51 +41,16 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
   // ป้องกัน hydration error
   useEffect(() => {
     setMounted(true);
+    
+    // ตั้งค่าเริ่มต้นของ audio element
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+      audioRef.current.src = currentSong.src;
+      audioRef.current.preload = "auto";
+    }
   }, []);
   
   const isDark = mounted ? theme === 'dark' : false;
-
-  // Autoplay ด้วย muted sound
-  useEffect(() => {
-    if (!mounted || autoplayAttempted || !audioRef.current) return;
-    
-    const attemptAutoplay = async () => {
-      try {
-        // รอให้ DOM พร้อม
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        if (audioRef.current) {
-          // ตั้งค่าเริ่มต้น: muted เพื่อให้ autoplay ทำงานได้
-          audioRef.current.muted = true;
-          audioRef.current.volume = 0.7;
-          
-          setAutoplayAttempted(true);
-          
-          try {
-            // พยายามเล่นแบบ muted
-            await audioRef.current.play();
-            setIsPlaying(true);
-            setShowUnmutePrompt(true); // แสดงข้อความให้ผู้ใช้เปิดเสียง
-            if (onPlayingChange) onPlayingChange(true);
-            
-            // ซ่อนข้อความหลังจาก 5 วินาที
-            setTimeout(() => {
-              setShowUnmutePrompt(false);
-            }, 5000);
-          } catch (error) {
-            console.log("Autoplay prevented:", error);
-            setIsPlaying(false);
-            if (onPlayingChange) onPlayingChange(false);
-          }
-        }
-      } catch (err) {
-        console.log("Autoplay error:", err);
-        setAutoplayAttempted(true);
-      }
-    };
-    
-    attemptAutoplay();
-  }, [mounted, autoplayAttempted, audioRef, onPlayingChange]);
 
   // Set up audio element event listeners
   useEffect(() => {
@@ -100,155 +58,110 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
     
     const audio = audioRef.current;
     
-    const handleCanPlay = () => {
-      setIsAudioReady(true);
-      
-      if (isPlaying && isTrackChanging && userInteracted) {
-        playTrack();
-        setIsTrackChanging(false);
-      }
-    };
-    
-    const handleLoadStart = () => {
-      setIsAudioReady(false);
-    };
-    
-    const handleError = (e: Event) => {
-      console.error("Audio error:", e);
-      setIsAudioReady(false);
-      setIsPlaying(false);
-      if (onPlayingChange) onPlayingChange(false);
+    const handleTimeUpdate = () => {
+      setCurrentTime(audio.currentTime);
+      setDuration(audio.duration || 0);
     };
     
     const handleEnded = () => {
+      // ทันทีที่เพลงจบ ให้เล่นเพลงถัดไปโดยอัตโนมัติ
       handleNext();
     };
     
-    // Add event listeners
-    audio.addEventListener('canplay', handleCanPlay);
-    audio.addEventListener('loadstart', handleLoadStart);
-    audio.addEventListener('error', handleError);
-    audio.addEventListener('ended', handleEnded);
-    
-    audio.preload = "auto";
-    
-    if (!audio.src) {
-      audio.src = currentSong.src;
-      audio.load();
-    }
-    
-    return () => {
-      audio.removeEventListener('canplay', handleCanPlay);
-      audio.removeEventListener('loadstart', handleLoadStart);
-      audio.removeEventListener('error', handleError);
-      audio.removeEventListener('ended', handleEnded);
-    };
-  }, [audioRef, currentSong, mounted, isPlaying, isTrackChanging, userInteracted, onPlayingChange]);
-
-  // Safe play function
-  const playTrack = async () => {
-    if (!audioRef.current || !isAudioReady) return false;
-    
-    try {
-      if (playbackPromiseRef.current) {
-        await playbackPromiseRef.current.catch(() => {});
-        playbackPromiseRef.current = null;
-      }
-      
-      const playPromise = audioRef.current.play();
-      playbackPromiseRef.current = playPromise;
-      
-      await playPromise;
+    const handlePlay = () => {
+      setIsPlaying(true);
       if (onPlayingChange) onPlayingChange(true);
-      return true;
-    } catch (error) {
-      console.error("Error playing track:", error);
+    };
+    
+    const handlePause = () => {
       setIsPlaying(false);
       if (onPlayingChange) onPlayingChange(false);
-      return false;
-    } finally {
-      playbackPromiseRef.current = null;
-    }
-  };
-
-  // Safely pause playback
-  const pauseTrack = () => {
-    if (!audioRef.current) return;
+    };
     
-    try {
-      audioRef.current.pause();
-      if (onPlayingChange) onPlayingChange(false);
-    } catch (error) {
-      console.error("Error pausing track:", error);
-    }
-  };
-
-  // Play/pause when state changes
-  useEffect(() => {
-    if (!mounted || !audioRef.current) return;
+    // Add event listeners
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('play', handlePlay);
+    audio.addEventListener('pause', handlePause);
     
-    if (isPlaying) {
-      if (isAudioReady && !isTrackChanging) {
-        playTrack();
-      }
-    } else {
-      pauseTrack();
-    }
-  }, [isPlaying, isAudioReady, isTrackChanging, mounted]);
-  
+    return () => {
+      // Remove event listeners
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('play', handlePlay);
+      audio.removeEventListener('pause', handlePause);
+    };
+  }, [audioRef, mounted, onPlayingChange]);
+
   // Update track when changing songs
   useEffect(() => {
     if (!audioRef.current || !mounted) return;
     
-    const changeTrack = async () => {
-      setIsTrackChanging(true);
-      
-      try {
-        pauseTrack();
-        audioRef.current.src = currentSong.src;
-        audioRef.current.load();
-      } catch (error) {
-        console.error("Error changing track:", error);
-        setIsPlaying(false);
-        setIsTrackChanging(false);
-        if (onPlayingChange) onPlayingChange(false);
-      }
-    };
+    const wasPlaying = isPlaying;
     
-    changeTrack();
+    try {
+      // Pause current playback
+      audioRef.current.pause();
+      
+      // Change source
+      audioRef.current.src = currentSong.src;
+      
+      // Set autoplay to ensure tracks play sequentially
+      audioRef.current.autoplay = wasPlaying;
+      audioRef.current.load();
+      
+      // Resume playback if it was playing
+      if (wasPlaying) {
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            console.error("Error playing track:", error);
+            setIsPlaying(false);
+            if (onPlayingChange) onPlayingChange(false);
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error changing track:", error);
+      setIsPlaying(false);
+      if (onPlayingChange) onPlayingChange(false);
+    }
   }, [currentSong, mounted]);
 
   // Playback control functions
   const handlePlayPause = () => {
-    setUserInteracted(true);
-    setIsPlaying(!isPlaying);
+    if (!audioRef.current) return;
+    
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          console.error("Error playing track:", error);
+          setIsPlaying(false);
+          if (onPlayingChange) onPlayingChange(false);
+        });
+      }
+    }
   };
   
   const handleNext = () => {
+    console.log("Moving to next track");
     setCurrentTrackIndex((prev) => (prev + 1) % playlist.length);
+    // ถ้าไม่ได้เล่นอยู่ ให้เริ่มเล่น
     if (!isPlaying) setIsPlaying(true);
-    setUserInteracted(true);
   };
 
   const handlePrev = () => {
     setCurrentTrackIndex((prev) => (prev - 1 + playlist.length) % playlist.length);
-    if (!isPlaying) setIsPlaying(true);
-    setUserInteracted(true);
   };
   
   const selectTrack = (index: number) => {
     setCurrentTrackIndex(index);
     setIsPlaying(true);
-    setUserInteracted(true);
     if (window.innerWidth < 768) {
       setShowPlaylist(false);
-    }
-  };
-
-  const handleTimeUpdate = () => {
-    if (audioRef.current && !isDragging) {
-      setCurrentTime(audioRef.current.currentTime);
-      setDuration(audioRef.current.duration || 0);
     }
   };
 
@@ -261,42 +174,32 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
       audioRef.current.currentTime = newTime;
       setCurrentTime(newTime);
     }
-    
-    setUserInteracted(true);
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseFloat(e.target.value);
     setVolume(newVolume);
-    setUserInteracted(true);
     
     if (audioRef.current) {
       audioRef.current.volume = newVolume;
-      // ถ้าปรับ volume > 0 ให้ unmute อัตโนมัติ
+      
       if (newVolume > 0 && isMuted) {
         audioRef.current.muted = false;
         setIsMuted(false);
       }
       if (newVolume === 0) {
         setIsMuted(true);
+        audioRef.current.muted = true;
       }
     }
   };
 
   const toggleMute = () => {
-    setUserInteracted(true);
-    setShowUnmutePrompt(false);
+    if (!audioRef.current) return;
     
-    if (audioRef.current) {
-      if (isMuted) {
-        audioRef.current.muted = false;
-        audioRef.current.volume = volume;
-        setIsMuted(false);
-      } else {
-        audioRef.current.muted = true;
-        setIsMuted(true);
-      }
-    }
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+    audioRef.current.muted = newMutedState;
   };
 
   const togglePlaylist = () => {
@@ -343,22 +246,6 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
         : 'bg-white/20 border-white/30 shadow-lg shadow-purple-500/5'
       } rounded-xl overflow-hidden relative`}
     >
-      {/* Unmute Prompt - แสดงข้อความให้เปิดเสียง */}
-      {showUnmutePrompt && isMuted && isPlaying && (
-        <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs py-1.5 px-3 flex items-center justify-between z-20 animate-pulse">
-          <span className="flex items-center gap-1">
-            <Volume1 size={14} />
-            คลิกที่ไอคอนลำโพงเพื่อเปิดเสียง 🎵
-          </span>
-          <button 
-            onClick={() => setShowUnmutePrompt(false)}
-            className="hover:opacity-70"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
-      
       {/* Minimal Player */}
       <div className="px-3 py-2.5 transition-all duration-300">
         {/* Header */}
@@ -441,7 +328,7 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
             onClick={toggleMute}
             className={`h-8 w-8 rounded-full ${
               isMuted 
-                ? 'text-orange-500 hover:text-orange-400 animate-pulse' 
+                ? 'text-orange-500 hover:text-orange-400' 
                 : isDark 
                   ? 'text-gray-400 hover:text-purple-400' 
                   : 'text-gray-600 hover:text-purple-500'
@@ -467,10 +354,7 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
               variant="outline" 
               size="icon" 
               onClick={handlePlayPause}
-              disabled={isTrackChanging || !isAudioReady}
-              className={`h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 border-none text-white shadow-md hover:shadow-lg hover:opacity-90 transition-all ${
-                (isTrackChanging || !isAudioReady) ? 'opacity-60' : ''
-              }`}
+              className={`h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 border-none text-white shadow-md hover:shadow-lg hover:opacity-90 transition-all`}
             >
               {isPlaying ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
             </Button>
@@ -490,7 +374,7 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
           
           <div className="w-8 h-8 flex items-center justify-center">
             {/* Visualizer indicators */}
-            {isPlaying && isAudioReady && !isTrackChanging && (
+            {isPlaying && (
               <div className="flex items-end gap-0.5">
                 <div className={`w-1 rounded-full animate-[soundBounce_0.8s_ease-in-out_infinite] ${
                   isDark ? 'bg-indigo-400' : 'bg-indigo-500'
@@ -501,15 +385,6 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
                 <div className={`w-1 rounded-full animate-[soundBounce_0.6s_ease-in-out_infinite_0.1s] ${
                   isDark ? 'bg-indigo-400' : 'bg-indigo-500'
                 }`} style={{height: '12px'}}></div>
-              </div>
-            )}
-            
-            {/* Loading indicator */}
-            {isTrackChanging && (
-              <div className="flex items-center space-x-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></div>
-                <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" style={{animationDelay: '0.3s'}}></div>
-                <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" style={{animationDelay: '0.6s'}}></div>
               </div>
             )}
           </div>
@@ -570,7 +445,7 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
                       ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white'
                       : isDark ? 'bg-gray-700/50' : 'bg-white/40'
                   }`}>
-                    {currentTrackIndex === index && isPlaying && isAudioReady && !isTrackChanging ? (
+                    {currentTrackIndex === index && isPlaying ? (
                       <div className="flex items-center space-x-px">
                         <span className="w-0.5 h-2 bg-white rounded-full animate-[soundBounce_0.9s_ease-in-out_infinite]"></span>
                         <span className="w-0.5 h-1.5 bg-white rounded-full animate-[soundBounce_0.8s_ease-in-out_infinite_0.2s]"></span>
@@ -599,13 +474,6 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
           </div>
         </div>
       </div>
-      
-      <audio 
-        ref={audioRef} 
-        onTimeUpdate={handleTimeUpdate}
-        onDurationChange={handleTimeUpdate}
-        preload="auto"
-      />
     </Card>
   );
 }

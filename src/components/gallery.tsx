@@ -35,12 +35,8 @@ export function Gallery({ items }: GalleryProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [autoplayEnabled, setAutoplayEnabled] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [isVideoReady, setIsVideoReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const autoplayTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const galleryContainerRef = useRef<HTMLDivElement>(null);
   const { theme } = useTheme();
 
@@ -55,17 +51,40 @@ export function Gallery({ items }: GalleryProps) {
 
   // Handle opening media
   const openMedia = (item: MediaItem, index: number) => {
+    if (videoRef.current) {
+      videoRef.current.pause();
+    }
+    
     setSelectedMedia(item);
     setCurrentIndex(index);
     setModalOpen(true);
     setIsLoading(true);
-    setIsVideoReady(false);
-    setIsPlaying(false);
     
-    // Reset autoplay state
-    setAutoplayEnabled(false);
-    if (autoplayTimerRef.current) {
-      clearTimeout(autoplayTimerRef.current);
+    // เมื่อเปิดวิดีโอ ให้เล่นทันทีเมื่อพร้อม
+    if (item.type === 'video') {
+      // ตั้งค่าให้พยายามเล่นวิดีโอเมื่อโหลดเสร็จ
+      setTimeout(() => {
+        if (videoRef.current && !videoRef.current.paused) {
+          // วิดีโอกำลังเล่นอยู่แล้ว
+          return;
+        }
+        
+        if (videoRef.current) {
+          const playPromise = videoRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => {
+                setIsPlaying(true);
+                setIsLoading(false);
+              })
+              .catch(error => {
+                console.error("Error auto-playing video:", error);
+                setIsPlaying(false);
+                setIsLoading(false);
+              });
+          }
+        }
+      }, 500); // รอให้วิดีโอโหลดสักครู่
     }
   };
 
@@ -82,14 +101,7 @@ export function Gallery({ items }: GalleryProps) {
     setCurrentIndex(nextIndex);
     setSelectedMedia(mediaList[nextIndex]);
     setIsLoading(true);
-    setIsVideoReady(false);
     setIsPlaying(false);
-    
-    // Reset autoplay timer when manually navigating
-    if (autoplayEnabled && autoplayTimerRef.current) {
-      clearTimeout(autoplayTimerRef.current);
-      scheduleNextSlide();
-    }
   };
 
   const goToPrev = () => {
@@ -104,14 +116,7 @@ export function Gallery({ items }: GalleryProps) {
     setCurrentIndex(prevIndex);
     setSelectedMedia(mediaList[prevIndex]);
     setIsLoading(true);
-    setIsVideoReady(false);
     setIsPlaying(false);
-    
-    // Reset autoplay timer when manually navigating
-    if (autoplayEnabled && autoplayTimerRef.current) {
-      clearTimeout(autoplayTimerRef.current);
-      scheduleNextSlide();
-    }
   };
 
   // Fullscreen toggle
@@ -131,39 +136,13 @@ export function Gallery({ items }: GalleryProps) {
     }
   };
 
-  // Autoplay functions
-  const toggleAutoplay = () => {
-    if (autoplayEnabled) {
-      setAutoplayEnabled(false);
-      if (autoplayTimerRef.current) {
-        clearTimeout(autoplayTimerRef.current);
-        autoplayTimerRef.current = null;
-      }
-    } else {
-      setAutoplayEnabled(true);
-      scheduleNextSlide();
-    }
-  };
-
-  const scheduleNextSlide = () => {
-    if (autoplayTimerRef.current) {
-      clearTimeout(autoplayTimerRef.current);
-    }
-    
-    // Set next slide to happen in 3 seconds for images, or after video ends
-    if (selectedMedia?.type === 'image') {
-      autoplayTimerRef.current = setTimeout(goToNext, 3000);
-    }
-  };
-
   // Video control functions with error handling
   const toggleVideoPlayback = () => {
-    if (!videoRef.current || !isVideoReady) return;
+    if (!videoRef.current) return;
     
     try {
       if (videoRef.current.paused) {
         const playPromise = videoRef.current.play();
-        
         if (playPromise !== undefined) {
           playPromise
             .then(() => {
@@ -188,14 +167,12 @@ export function Gallery({ items }: GalleryProps) {
   const showControlsTemporarily = () => {
     setShowControls(true);
     
-    if (controlsTimerRef.current) {
-      clearTimeout(controlsTimerRef.current);
-    }
-    
     if (isFullscreen) {
-      controlsTimerRef.current = setTimeout(() => {
+      const timer = setTimeout(() => {
         setShowControls(false);
       }, 3000);
+      
+      return () => clearTimeout(timer);
     }
   };
 
@@ -216,31 +193,10 @@ export function Gallery({ items }: GalleryProps) {
     };
   }, [mounted]);
 
-  // Start autoplay timer if enabled
-  useEffect(() => {
-    if (autoplayEnabled && !isLoading) {
-      scheduleNextSlide();
-    }
-    
-    return () => {
-      if (autoplayTimerRef.current) {
-        clearTimeout(autoplayTimerRef.current);
-      }
-    };
-  }, [autoplayEnabled, isLoading, selectedMedia]);
-
   // Set up video event listeners
   useEffect(() => {
     const videoElement = videoRef.current;
-    
-    if (!videoElement) return;
-    
-    const handleVideoEnded = () => {
-      setIsPlaying(false);
-      if (autoplayEnabled) {
-        goToNext();
-      }
-    };
+    if (!videoElement || !selectedMedia || selectedMedia.type !== 'video') return;
     
     const handleVideoError = (e: Event) => {
       console.error("Video error:", e);
@@ -249,36 +205,53 @@ export function Gallery({ items }: GalleryProps) {
     };
     
     const handleCanPlay = () => {
-      setIsVideoReady(true);
       setIsLoading(false);
+      // Auto-play when ready
+      try {
+        videoElement.play()
+          .then(() => setIsPlaying(true))
+          .catch(err => console.error("Auto-play failed:", err));
+      } catch (err) {
+        console.error("Error auto-playing:", err);
+      }
+    };
+    
+    const handlePlay = () => {
+      setIsPlaying(true);
+    };
+    
+    const handlePause = () => {
+      setIsPlaying(false);
+    };
+    
+    const handleEnded = () => {
+      setIsPlaying(false);
     };
     
     // Add event listeners
-    videoElement.addEventListener('ended', handleVideoEnded);
-    videoElement.addEventListener('play', () => setIsPlaying(true));
-    videoElement.addEventListener('pause', () => setIsPlaying(false));
     videoElement.addEventListener('error', handleVideoError);
     videoElement.addEventListener('canplay', handleCanPlay);
     videoElement.addEventListener('loadeddata', handleCanPlay);
+    videoElement.addEventListener('play', handlePlay);
+    videoElement.addEventListener('pause', handlePause);
+    videoElement.addEventListener('ended', handleEnded);
     
     return () => {
       // Remove event listeners
-      videoElement.removeEventListener('ended', handleVideoEnded);
-      videoElement.removeEventListener('play', () => setIsPlaying(true));
-      videoElement.removeEventListener('pause', () => setIsPlaying(false));
       videoElement.removeEventListener('error', handleVideoError);
       videoElement.removeEventListener('canplay', handleCanPlay);
       videoElement.removeEventListener('loadeddata', handleCanPlay);
+      videoElement.removeEventListener('play', handlePlay);
+      videoElement.removeEventListener('pause', handlePause);
+      videoElement.removeEventListener('ended', handleEnded);
     };
-  }, [videoRef.current, autoplayEnabled]);
+  }, [videoRef.current, selectedMedia]);
 
   // Handle keyboard navigation
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || !modalOpen) return;
     
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!modalOpen) return;
-      
       showControlsTemporarily();
       
       switch (e.key) {
@@ -311,22 +284,7 @@ export function Gallery({ items }: GalleryProps) {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [modalOpen, isFullscreen, selectedMedia, mounted, isVideoReady]);
-
-  // Clean up timers when closing modal
-  useEffect(() => {
-    if (!modalOpen) {
-      if (autoplayTimerRef.current) {
-        clearTimeout(autoplayTimerRef.current);
-      }
-      if (controlsTimerRef.current) {
-        clearTimeout(controlsTimerRef.current);
-      }
-      setAutoplayEnabled(false);
-      setIsPlaying(false);
-      setIsVideoReady(false);
-    }
-  }, [modalOpen]);
+  }, [modalOpen, isFullscreen, selectedMedia, mounted]);
 
   // Get appropriate dialog title based on selected media
   const getDialogTitle = () => {
@@ -473,8 +431,7 @@ export function Gallery({ items }: GalleryProps) {
           if (selectedMedia?.type === 'video' && videoRef.current) {
             videoRef.current.pause();
           }
-          setAutoplayEnabled(false);
-          setIsVideoReady(false);
+          setIsPlaying(false);
         }
       }}>
         <DialogContent 
@@ -506,24 +463,6 @@ export function Gallery({ items }: GalleryProps) {
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    {/* Autoplay toggle */}
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={toggleAutoplay}
-                      className={`h-8 w-8 rounded-full ${
-                        autoplayEnabled 
-                          ? 'bg-purple-500/60 text-white hover:bg-purple-500/80' 
-                          : 'bg-black/40 text-white/70 hover:bg-black/60 hover:text-white'
-                      }`}
-                    >
-                      {autoplayEnabled ? (
-                        <Pause className="h-4 w-4" />
-                      ) : (
-                        <Play className="h-4 w-4 ml-0.5" />
-                      )}
-                    </Button>
-                    
                     {/* Download button */}
                     <Button 
                       variant="ghost" 
@@ -594,8 +533,7 @@ export function Gallery({ items }: GalleryProps) {
                       variant="ghost" 
                       size="icon" 
                       onClick={toggleVideoPlayback}
-                      disabled={!isVideoReady}
-                      className="h-12 w-12 rounded-full bg-black/40 text-white hover:bg-black/60 pointer-events-auto"
+                      className="h-12 w-12 rounded-full bg-black/40 text-white hover:bg-black/60 pointer-events-auto opacity-50 hover:opacity-100"
                     >
                       {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6 ml-0.5" />}
                     </Button>
@@ -638,7 +576,7 @@ export function Gallery({ items }: GalleryProps) {
                 />
               )}
               
-              {/* Video display */}
+              {/* Video display - ปรับปรุงการโหลดวิดีโอ */}
               {selectedMedia?.type === 'video' && (
                 <video 
                   ref={videoRef}
@@ -649,11 +587,19 @@ export function Gallery({ items }: GalleryProps) {
                   preload="auto"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (isVideoReady) {
-                      toggleVideoPlayback();
+                    toggleVideoPlayback();
+                  }}
+                  playsInline
+                  controls={false}
+                  onCanPlay={() => {
+                    setIsLoading(false);
+                    // เล่นวิดีโอทันทีเมื่อโหลดเสร็จ
+                    if (videoRef.current && videoRef.current.paused) {
+                      videoRef.current.play()
+                        .then(() => setIsPlaying(true))
+                        .catch(err => console.error("Could not auto-play video:", err));
                     }
                   }}
-                  playsInline // Important for mobile
                 />
               )}
             </div>
@@ -675,13 +621,12 @@ export function Gallery({ items }: GalleryProps) {
                           // Pause current video if playing before switching
                           if (selectedMedia?.type === 'video' && videoRef.current && isPlaying) {
                             videoRef.current.pause();
-                            setIsPlaying(false);
                           }
                           
                           setCurrentIndex(idx);
                           setSelectedMedia(item);
                           setIsLoading(true);
-                          setIsVideoReady(false);
+                          setIsPlaying(false);
                         }}
                       >
                         <img 

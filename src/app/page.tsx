@@ -35,12 +35,12 @@ const myPlaylist = [
 
 // 🖼️ รูปภาพ & วิดีโอ: นำไฟล์ไปไว้ที่ public/gallery/
 const myMedia = [
-  { type: 'image' as const, src: "/gallery/photo1.jpg", thumb: "/gallery/photo1.jpg" },
-  { type: 'image' as const, src: "/gallery/photo2.jpg", thumb: "/gallery/photo2.jpg" },
-  { type: 'image' as const, src: "/gallery/photo3.jpg", thumb: "/gallery/photo3.jpg" },
-  { type: 'image' as const, src: "/gallery/photo4.jpg", thumb: "/gallery/photo4.jpg" },
-  { type: 'image' as const, src: "/gallery/photo5.jpg", thumb: "/gallery/photo5.jpg" },
-  { type: 'image' as const, src: "/gallery/photo6.jpg", thumb: "/gallery/photo6.jpg" },
+  { type: 'image' as const, src: "/gallery/1.jpg", thumb: "/gallery/1.jpg" },
+  { type: 'image' as const, src: "/gallery/2.jpg", thumb: "/gallery/2.jpg" },
+  { type: 'image' as const, src: "/gallery/3.jpg", thumb: "/gallery/3.jpg" },
+  { type: 'image' as const, src: "/gallery/4.jpg", thumb: "/gallery/4.jpg" },
+  { type: 'image' as const, src: "/gallery/5.jpg", thumb: "/gallery/5.jpg" },
+  { type: 'image' as const, src: "/gallery/6.jpg", thumb: "/gallery/6.jpg" },
   { type: 'video' as const, src: "/gallery/video1.mp4", thumb: "/gallery/thumb1.jpg" },
   { type: 'video' as const, src: "/gallery/video2.mp4", thumb: "/gallery/thumb2.jpg" },
   { type: 'video' as const, src: "/gallery/video3.mp4", thumb: "/gallery/thumb3.jpg" },

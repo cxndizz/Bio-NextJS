@@ -1,7 +1,7 @@
 "use client"
 
 /**
- * หน้าเว็บหลัก Link in Bio
+ * หน้าเว็บหลัก Link in Bio - แก้ไข Hydration Error
  * ไฟล์นี้เป็นหน้าแรกที่ผู้เข้าชมจะเห็น
  */
 
@@ -10,7 +10,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { MusicPlayer, Gallery, Links } from "@/components/page-components";
 import { VisitorCounter } from "@/components/visitor-counter";
 import AudioVisualizer from "@/components/audio-visualizer";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 
 // --- ข้อมูลทั้งหมดของเว็บคุณ (แก้ไขได้ตามต้องการ) ---
 
@@ -58,25 +58,55 @@ const myLinks = [
 
 // 👤 ข้อมูลโปรไฟล์
 const profile = {
-  name: "Your Name",
+  name: "cxndizz",
   bio: "Digital Creator | Photographer | Music Lover ✨",
   avatarUrl: "/profile.jpg", // ใส่รูปโปรไฟล์ที่ public/profile.jpg
 };
 
 // --- หน้าเว็บหลัก ---
 export default function Home() {
-  // หลีกเลี่ยงการใช้ null ในการสร้าง useRef เพื่อให้ตรงกับ MusicPlayerProps
   const audioRef = useRef<HTMLAudioElement>(null!);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // ป้องกัน hydration error
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // ส่งค่า state เหล่านี้ให้ MusicPlayer และ AudioVisualizer
   const handlePlayingStateChange = (playing: boolean) => {
     setIsPlaying(playing);
   };
 
+  // Loading state ขณะรอ mount เพื่อป้องกัน hydration error
+  if (!mounted) {
+    return (
+      <main className="min-h-screen flex flex-col items-center p-6 bg-gradient-to-b from-gray-50/50 to-gray-100/50 text-gray-800">
+        <div className="absolute top-4 right-4 z-10">
+          <div className="w-10 h-10 bg-gray-200 rounded-full animate-pulse"></div>
+        </div>
+        
+        <div className="flex flex-col items-center gap-8 w-full max-w-md pt-10">
+          {/* Loading Profile */}
+          <div className="text-center">
+            <div className="w-28 h-28 bg-gray-300 rounded-full mx-auto mb-4 animate-pulse"></div>
+            <div className="h-8 bg-gray-300 rounded mb-2 animate-pulse"></div>
+            <div className="h-6 bg-gray-200 rounded mb-2 animate-pulse"></div>
+          </div>
+          
+          {/* Loading Cards */}
+          {[1,2,3].map(i => (
+            <div key={i} className="w-full h-32 bg-gray-200 rounded-xl animate-pulse"></div>
+          ))}
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen flex flex-col items-center p-6 bg-gradient-to-b from-gray-50/50 to-gray-100/50 dark:from-gray-900/50 dark:to-gray-800/50 text-gray-800 dark:text-white transition-colors duration-300">
-      {/* Audio Visualizer */}
+      {/* Audio Visualizer - Enhanced bubble effects */}
       <AudioVisualizer audioRef={audioRef} isPlaying={isPlaying} />
       
       {/* ปุ่มสลับ Theme */}

@@ -35,15 +35,21 @@ export function Gallery({ items }: GalleryProps) {
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const autoplayTimerRef = useRef<NodeJS.Timeout | null>(null);
   const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const galleryContainerRef = useRef<HTMLDivElement>(null);
   const { theme } = useTheme();
 
+  // ป้องกัน hydration error
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const galleryImages = items.filter(item => item.type === 'image');
   const galleryVideos = items.filter(item => item.type === 'video');
-  const isDark = theme === 'dark';
+  const isDark = mounted ? theme === 'dark' : false;
 
   // Handle opening media
   const openMedia = (item: MediaItem, index: number) => {
@@ -160,6 +166,8 @@ export function Gallery({ items }: GalleryProps) {
 
   // Handle fullscreen change events
   useEffect(() => {
+    if (!mounted) return;
+    
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
       if (!document.fullscreenElement) {
@@ -171,7 +179,7 @@ export function Gallery({ items }: GalleryProps) {
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, []);
+  }, [mounted]);
 
   // Start autoplay timer if enabled
   useEffect(() => {
@@ -214,6 +222,8 @@ export function Gallery({ items }: GalleryProps) {
 
   // Handle keyboard navigation
   useEffect(() => {
+    if (!mounted) return;
+    
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!modalOpen) return;
       
@@ -249,7 +259,7 @@ export function Gallery({ items }: GalleryProps) {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [modalOpen, isFullscreen, selectedMedia]);
+  }, [modalOpen, isFullscreen, selectedMedia, mounted]);
 
   // Clean up timers when closing modal
   useEffect(() => {
@@ -265,6 +275,22 @@ export function Gallery({ items }: GalleryProps) {
     }
   }, [modalOpen]);
 
+  // Loading state ขณะรอ mount
+  if (!mounted) {
+    return (
+      <div className="w-full max-w-md">
+        <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded-xl mb-4 animate-pulse"></div>
+        <div className="bg-white/20 rounded-xl p-4">
+          <div className="grid grid-cols-3 gap-2">
+            {[1,2,3,4,5,6].map(i => (
+              <div key={i} className="aspect-square bg-gray-300 dark:bg-gray-600 rounded-lg animate-pulse"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-md">
       <Tabs defaultValue="photos" className="w-full">
@@ -272,15 +298,21 @@ export function Gallery({ items }: GalleryProps) {
           isDark 
             ? 'bg-black/30 border-gray-800/40' 
             : 'bg-white/30 border-white/20'
-        } border rounded-xl mb-4 text-gray-600 dark:text-gray-300`}>
+        } border rounded-xl mb-4 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
           <TabsTrigger value="photos" className={`
-            data-[state=active]:${isDark ? 'bg-gray-800' : 'bg-white'}
+            ${isDark 
+              ? 'data-[state=active]:bg-gray-800 data-[state=active]:text-foreground' 
+              : 'data-[state=active]:bg-white data-[state=active]:text-foreground'
+            }
           `}>
             <ImageIcon className="mr-2 h-4 w-4" />
             Photos
           </TabsTrigger>
           <TabsTrigger value="videos" className={`
-            data-[state=active]:${isDark ? 'bg-gray-800' : 'bg-white'}
+            ${isDark 
+              ? 'data-[state=active]:bg-gray-800 data-[state=active]:text-foreground' 
+              : 'data-[state=active]:bg-white data-[state=active]:text-foreground'
+            }
           `}>
             <Video className="mr-2 h-4 w-4" />
             Videos

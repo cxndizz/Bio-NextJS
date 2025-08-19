@@ -5,7 +5,7 @@ import {
   Play, Pause, SkipBack, SkipForward, 
   Volume2, VolumeX, Music, 
   ChevronUp, ChevronDown, 
-  List, X
+  List, X, Volume1
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,7 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.7);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true); // เริ่มต้นเป็น muted เพื่อให้ autoplay ทำงาน
   const [showPlaylist, setShowPlaylist] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -38,6 +38,7 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
   const [userInteracted, setUserInteracted] = useState(false);
   const [isAudioReady, setIsAudioReady] = useState(false);
   const [isTrackChanging, setIsTrackChanging] = useState(false);
+  const [showUnmutePrompt, setShowUnmutePrompt] = useState(false);
   const playbackPromiseRef = useRef<Promise<void> | null>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const { theme } = useTheme();
@@ -51,51 +52,35 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
   
   const isDark = mounted ? theme === 'dark' : false;
 
-  // Listen for any user interaction with the document
+  // Autoplay ด้วย muted sound
   useEffect(() => {
-    if (!mounted || userInteracted) return;
-
-    const handleUserInteraction = () => {
-      setUserInteracted(true);
-      
-      // Remove event listeners after first interaction
-      document.removeEventListener('click', handleUserInteraction);
-      document.removeEventListener('touchstart', handleUserInteraction);
-      document.removeEventListener('keydown', handleUserInteraction);
-    };
-
-    document.addEventListener('click', handleUserInteraction);
-    document.addEventListener('touchstart', handleUserInteraction);
-    document.addEventListener('keydown', handleUserInteraction);
-
-    return () => {
-      document.removeEventListener('click', handleUserInteraction);
-      document.removeEventListener('touchstart', handleUserInteraction);
-      document.removeEventListener('keydown', handleUserInteraction);
-    };
-  }, [mounted, userInteracted]);
-
-  // Autoplay attempt with safety measures
-  useEffect(() => {
-    if (!mounted || autoplayAttempted) return;
+    if (!mounted || autoplayAttempted || !audioRef.current) return;
     
     const attemptAutoplay = async () => {
       try {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // รอให้ DOM พร้อม
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
         if (audioRef.current) {
-          // Set audio to muted first (browsers allow muted autoplay)
+          // ตั้งค่าเริ่มต้น: muted เพื่อให้ autoplay ทำงานได้
           audioRef.current.muted = true;
-          audioRef.current.volume = 0;
+          audioRef.current.volume = 0.7;
           
-          // Mark as attempted before we actually try to play
           setAutoplayAttempted(true);
           
           try {
+            // พยายามเล่นแบบ muted
             await audioRef.current.play();
             setIsPlaying(true);
+            setShowUnmutePrompt(true); // แสดงข้อความให้ผู้ใช้เปิดเสียง
             if (onPlayingChange) onPlayingChange(true);
+            
+            // ซ่อนข้อความหลังจาก 5 วินาที
+            setTimeout(() => {
+              setShowUnmutePrompt(false);
+            }, 5000);
           } catch (error) {
-            console.log("Muted autoplay prevented:", error);
+            console.log("Autoplay prevented:", error);
             setIsPlaying(false);
             if (onPlayingChange) onPlayingChange(false);
           }
@@ -115,12 +100,9 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
     
     const audio = audioRef.current;
     
-    // Event handlers
     const handleCanPlay = () => {
       setIsAudioReady(true);
       
-      // If we should be playing and we're in the middle of a track change, 
-      // attempt to play now that the audio is ready
       if (isPlaying && isTrackChanging && userInteracted) {
         playTrack();
         setIsTrackChanging(false);
@@ -148,17 +130,14 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
     audio.addEventListener('error', handleError);
     audio.addEventListener('ended', handleEnded);
     
-    // Make sure the audio element has the correct attributes
     audio.preload = "auto";
     
-    // First time setup
     if (!audio.src) {
       audio.src = currentSong.src;
       audio.load();
     }
     
     return () => {
-      // Clean up event listeners
       audio.removeEventListener('canplay', handleCanPlay);
       audio.removeEventListener('loadstart', handleLoadStart);
       audio.removeEventListener('error', handleError);
@@ -166,24 +145,16 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
     };
   }, [audioRef, currentSong, mounted, isPlaying, isTrackChanging, userInteracted, onPlayingChange]);
 
-  // Safe play function with promise handling
+  // Safe play function
   const playTrack = async () => {
     if (!audioRef.current || !isAudioReady) return false;
     
     try {
-      // Cancel any existing playback attempt
       if (playbackPromiseRef.current) {
         await playbackPromiseRef.current.catch(() => {});
         playbackPromiseRef.current = null;
       }
       
-      // Apply user settings if available
-      if (userInteracted) {
-        audioRef.current.muted = false;
-        audioRef.current.volume = volume;
-      }
-      
-      // Start new playback
       const playPromise = audioRef.current.play();
       playbackPromiseRef.current = playPromise;
       
@@ -233,15 +204,9 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
       setIsTrackChanging(true);
       
       try {
-        // First pause current playback
         pauseTrack();
-        
-        // Update the source
         audioRef.current.src = currentSong.src;
         audioRef.current.load();
-        
-        // isAudioReady will be set to true by the canplay event
-        // and then the playTrack effect will trigger if isPlaying is true
       } catch (error) {
         console.error("Error changing track:", error);
         setIsPlaying(false);
@@ -255,7 +220,6 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
 
   // Playback control functions
   const handlePlayPause = () => {
-    // Set userInteracted to true on manual play/pause
     setUserInteracted(true);
     setIsPlaying(!isPlaying);
   };
@@ -298,7 +262,6 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
       setCurrentTime(newTime);
     }
     
-    // Set userInteracted on progress bar interaction
     setUserInteracted(true);
   };
 
@@ -309,21 +272,27 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
     
     if (audioRef.current) {
       audioRef.current.volume = newVolume;
-      audioRef.current.muted = newVolume === 0;
-      setIsMuted(newVolume === 0);
+      // ถ้าปรับ volume > 0 ให้ unmute อัตโนมัติ
+      if (newVolume > 0 && isMuted) {
+        audioRef.current.muted = false;
+        setIsMuted(false);
+      }
+      if (newVolume === 0) {
+        setIsMuted(true);
+      }
     }
   };
 
   const toggleMute = () => {
     setUserInteracted(true);
+    setShowUnmutePrompt(false);
     
     if (audioRef.current) {
       if (isMuted) {
-        audioRef.current.volume = volume;
         audioRef.current.muted = false;
+        audioRef.current.volume = volume;
         setIsMuted(false);
       } else {
-        audioRef.current.volume = 0;
         audioRef.current.muted = true;
         setIsMuted(true);
       }
@@ -336,7 +305,6 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
 
   const toggleExpanded = () => {
     setExpanded(!expanded);
-    // Close playlist when collapsing
     if (expanded) setShowPlaylist(false);
   };
 
@@ -347,7 +315,7 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
   };
 
-  // Loading state ขณะรอ mount
+  // Loading state
   if (!mounted) {
     return (
       <Card className="w-full max-w-md backdrop-blur-md bg-white/20 border-white/30 rounded-xl overflow-hidden">
@@ -373,8 +341,24 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
       ${isDark 
         ? 'bg-black/20 border-gray-800/40 shadow-lg shadow-purple-900/10' 
         : 'bg-white/20 border-white/30 shadow-lg shadow-purple-500/5'
-      } rounded-xl overflow-hidden`}
+      } rounded-xl overflow-hidden relative`}
     >
+      {/* Unmute Prompt - แสดงข้อความให้เปิดเสียง */}
+      {showUnmutePrompt && isMuted && isPlaying && (
+        <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs py-1.5 px-3 flex items-center justify-between z-20 animate-pulse">
+          <span className="flex items-center gap-1">
+            <Volume1 size={14} />
+            คลิกที่ไอคอนลำโพงเพื่อเปิดเสียง 🎵
+          </span>
+          <button 
+            onClick={() => setShowUnmutePrompt(false)}
+            className="hover:opacity-70"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      
       {/* Minimal Player */}
       <div className="px-3 py-2.5 transition-all duration-300">
         {/* Header */}
@@ -424,7 +408,7 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
           </div>
         </div>
         
-        {/* Progress Bar - Always visible */}
+        {/* Progress Bar */}
         <div className="mb-2">
           <div 
             ref={progressBarRef}
@@ -449,15 +433,18 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
           </div>
         </div>
         
-        {/* Main Controls - Always visible */}
+        {/* Main Controls */}
         <div className="flex items-center justify-between">
           <Button 
             variant="ghost" 
             size="icon" 
             onClick={toggleMute}
-            className={`h-8 w-8 rounded-full ${isDark 
-              ? 'text-gray-400 hover:text-purple-400' 
-              : 'text-gray-600 hover:text-purple-500'
+            className={`h-8 w-8 rounded-full ${
+              isMuted 
+                ? 'text-orange-500 hover:text-orange-400 animate-pulse' 
+                : isDark 
+                  ? 'text-gray-400 hover:text-purple-400' 
+                  : 'text-gray-600 hover:text-purple-500'
             }`}
           >
             {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
@@ -528,7 +515,7 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
           </div>
         </div>
         
-        {/* Expanded Controls - Show when expanded */}
+        {/* Expanded Controls */}
         <div className={`overflow-hidden transition-all duration-300 ${
           expanded ? 'max-h-20 opacity-100 mt-2' : 'max-h-0 opacity-0'
         }`}>

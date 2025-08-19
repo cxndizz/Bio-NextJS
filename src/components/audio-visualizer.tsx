@@ -8,17 +8,19 @@ interface AudioVisualizerProps {
   isPlaying: boolean;
 }
 
-interface Bubble {
+interface Particle {
   x: number;
   y: number;
   size: number;
-  speedY: number;
-  opacity: number;
+  speed: number;
   color: string;
-  pulse: number;
-  pulseSpeed: number;
-  lifespan: number;
-  currentLife: number;
+  opacity: number;
+  life: number;
+  maxLife: number;
+  frequency: number;
+  rotate: number;
+  rotateSpeed: number;
+  shape: 'circle' | 'square' | 'triangle' | 'star';
 }
 
 const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }) => {
@@ -28,10 +30,10 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
   const [dataArray, setDataArray] = useState<Uint8Array | null>(null);
   const [source, setSource] = useState<MediaElementAudioSourceNode | null>(null);
   const animationRef = useRef<number | null>(null);
-  const bubblesRef = useRef<Bubble[]>([]);
-  const lastBubbleTimeRef = useRef<number>(0);
+  const particlesRef = useRef<Particle[]>([]);
+  const lastParticleTimeRef = useRef<number>(0);
   const { theme } = useTheme();
-
+  
   // Initialize audio context and analyzer
   useEffect(() => {
     if (!audioRef.current) return;
@@ -77,50 +79,130 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
   const getThemeColors = () => {
     const isDark = theme === 'dark';
     
-    const primaryColor = isDark 
-      ? 'rgba(147, 51, 234, 0.7)' // Purple for dark mode
-      : 'rgba(168, 85, 247, 0.5)'; // Lighter purple for light mode
-      
-    const secondaryColor = isDark 
-      ? 'rgba(236, 72, 153, 0.7)' // Pink for dark mode
-      : 'rgba(244, 114, 182, 0.5)'; // Lighter pink for light mode
-      
-    const tertiaryColor = isDark 
-      ? 'rgba(59, 130, 246, 0.7)' // Blue for dark mode
-      : 'rgba(96, 165, 250, 0.5)'; // Lighter blue for light mode
-    
-    return [primaryColor, secondaryColor, tertiaryColor];
+    // Neon palette for dark mode, pastel palette for light mode
+    return isDark 
+      ? [
+          '#ff00ff', // Magenta
+          '#00ffff', // Cyan
+          '#ff00aa', // Pink
+          '#aa00ff', // Purple
+          '#00ff00', // Green
+          '#ffff00', // Yellow
+        ]
+      : [
+          'rgba(186, 104, 200, 0.7)', // Lavender
+          'rgba(79, 195, 247, 0.7)',  // Light blue
+          'rgba(255, 138, 101, 0.7)', // Coral
+          'rgba(129, 199, 132, 0.7)', // Mint
+          'rgba(255, 241, 118, 0.7)', // Light yellow
+          'rgba(149, 117, 205, 0.7)', // Purple
+        ];
   };
 
-  // Create a new bubble
-  const createBubble = (frequencyData: any) => {
+  // Create a new particle
+  const createParticle = (frequencyData: Uint8Array<ArrayBuffer | ArrayBufferLike>, positionOverride?: {x: number, y: number}) => {
     if (!canvasRef.current) return null;
     
     const canvas = canvasRef.current;
     const colors = getThemeColors();
     
-    // Get a random strong frequency for bubble size
-    const freqIndex = Math.floor(Math.random() * frequencyData.length * 0.8) + Math.floor(frequencyData.length * 0.2);
-    const frequencyValue = frequencyData[freqIndex] || 0;
+    // Get a random frequency band, weighted towards the more expressive middle frequencies
+    const freqIndex = Math.floor(Math.random() * (frequencyData.length * 0.6)) + Math.floor(frequencyData.length * 0.2);
+    const frequencyValue = frequencyData[freqIndex] || 50;
     
-    // Make bubble size related to frequency intensity
-    const baseSize = Math.max(10, frequencyValue / 5);
-    const sizeVariation = Math.random() * 15;
-    const size = baseSize + sizeVariation;
+    // Make size related to frequency intensity
+    const sizeBase = Math.max(3, frequencyValue / 10);
+    const sizeVariation = Math.random() * 5;
+    const size = sizeBase + sizeVariation;
     
-    // Create bubble
+    // Position - either random or overridden (for events like clicks)
+    const x = positionOverride?.x || Math.random() * canvas.width;
+    const y = positionOverride?.y || Math.random() * canvas.height;
+    
+    // Random shape
+    const shapes: ('circle' | 'square' | 'triangle' | 'star')[] = ['circle', 'square', 'triangle', 'star'];
+    const shape = shapes[Math.floor(Math.random() * shapes.length)];
+    
+    // Create particle
     return {
-      x: Math.random() * canvas.width,
-      y: canvas.height + size, // Start from below the screen
-      size: size,
-      speedY: 0.5 + Math.random() * 1.5, // Upward speed
-      opacity: 0.1 + Math.random() * 0.5, // Random opacity
+      x,
+      y,
+      size,
+      speed: 0.5 + Math.random() * 1.5,
       color: colors[Math.floor(Math.random() * colors.length)],
-      pulse: 0,
-      pulseSpeed: 0.02 + Math.random() * 0.04,
-      lifespan: 500 + Math.random() * 5000, // Random lifespan between 0.5-5.5 seconds
-      currentLife: 0
+      opacity: 0.7 + Math.random() * 0.3,
+      life: 0,
+      maxLife: 100 + Math.random() * 500, // Lifespan in animation frames
+      frequency: frequencyValue,
+      rotate: Math.random() * 360,
+      rotateSpeed: (Math.random() - 0.5) * 2,
+      shape
     };
+  };
+
+  // Draw a single particle
+  const drawParticle = (ctx: CanvasRenderingContext2D, particle: Particle) => {
+    ctx.save();
+    ctx.globalAlpha = particle.opacity;
+    ctx.translate(particle.x, particle.y);
+    ctx.rotate((particle.rotate * Math.PI) / 180);
+    
+    // Fill style based on particle color
+    ctx.fillStyle = particle.color;
+    
+    // Draw different shapes
+    switch (particle.shape) {
+      case 'square':
+        ctx.fillRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size);
+        break;
+        
+      case 'triangle':
+        ctx.beginPath();
+        ctx.moveTo(0, -particle.size / 2);
+        ctx.lineTo(particle.size / 2, particle.size / 2);
+        ctx.lineTo(-particle.size / 2, particle.size / 2);
+        ctx.closePath();
+        ctx.fill();
+        break;
+        
+      case 'star':
+        const spikes = 5;
+        const outerRadius = particle.size / 2;
+        const innerRadius = particle.size / 4;
+        
+        ctx.beginPath();
+        for (let i = 0; i < spikes * 2; i++) {
+          const radius = i % 2 === 0 ? outerRadius : innerRadius;
+          const angle = (Math.PI / spikes) * i;
+          ctx.lineTo(
+            Math.cos(angle) * radius,
+            Math.sin(angle) * radius
+          );
+        }
+        ctx.closePath();
+        ctx.fill();
+        break;
+        
+      case 'circle':
+      default:
+        ctx.beginPath();
+        ctx.arc(0, 0, particle.size / 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add glow effect
+        const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, particle.size);
+        glow.addColorStop(0, particle.color);
+        glow.addColorStop(1, 'transparent');
+        
+        ctx.globalAlpha = particle.opacity * 0.5;
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(0, 0, particle.size, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+    }
+    
+    ctx.restore();
   };
 
   // Animation function
@@ -144,96 +226,81 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
       
       // Get frequency data
       try {
-        // Type assertion to fix TypeScript error
-        analyser.getByteFrequencyData(dataArray as any);
+        if (dataArray && analyser) {
+          // ใช้ double assertion เพื่อแก้ปัญหา TypeScript
+          analyser.getByteFrequencyData(dataArray as unknown as Uint8Array<ArrayBuffer>);
+        }
       } catch (err) {
         console.error("Error getting frequency data:", err);
       }
       
       const now = Date.now();
       
-      // Add new bubbles based on music playing or not
-      if (isPlaying) {
-        // Calculate average frequency to determine bubble creation rate
-        const sum = dataArray.reduce((acc, val) => acc + val, 0);
-        const avg = sum / dataArray.length;
-        
-        // Create bubbles based on beat detection
-        if (now - lastBubbleTimeRef.current > (avg < 50 ? 300 : avg < 100 ? 150 : 50)) {
-          const newBubble = createBubble(dataArray);
-          if (newBubble) bubblesRef.current.push(newBubble);
-          lastBubbleTimeRef.current = now;
-        }
-      } else if (bubblesRef.current.length < 15 && now - lastBubbleTimeRef.current > 800) {
-        // Create ambient bubbles when not playing
-        const ambientDataArray = new Uint8Array(dataArray.length).fill(30);
-        const newBubble = createBubble(ambientDataArray);
-        if (newBubble) bubblesRef.current.push(newBubble);
-        lastBubbleTimeRef.current = now;
+      // Calculate overall audio energy for thresholds
+      let avg = 0;
+      
+      if (dataArray) {
+        const sum = Array.from(dataArray).reduce((acc, val) => acc + val, 0);
+        avg = sum / dataArray.length;
       }
       
-      // Update and draw bubbles
-      bubblesRef.current = bubblesRef.current.filter(bubble => {
-        // Update position
-        bubble.y -= bubble.speedY;
+      // Add new particles based on music playing or not
+      if (isPlaying) {
+        // Dynamic threshold based on energy levels
+        const threshold = avg < 30 ? 300 : avg < 80 ? 150 : 50;
         
-        // Update life
-        bubble.currentLife += 16; // Approximately 16ms per frame
+        // Add particles based on audio intensity
+        if (now - lastParticleTimeRef.current > threshold) {
+          // Create particle
+          const newParticle = createParticle(dataArray as unknown as Uint8Array<ArrayBuffer>);
+          if (newParticle) particlesRef.current.push(newParticle);
+          lastParticleTimeRef.current = now;
+          
+          // For high energy sections, add bursts of particles
+          if (avg > 120) {
+            const burstCount = 3 + Math.floor(Math.random() * 3);
+            for (let i = 0; i < burstCount; i++) {
+              const burstParticle = createParticle(dataArray as unknown as Uint8Array<ArrayBuffer>);
+              if (burstParticle) particlesRef.current.push(burstParticle);
+            }
+          }
+        }
+      } else if (particlesRef.current.length < 10 && now - lastParticleTimeRef.current > 1000) {
+        // Create ambient particles when not playing
+        const ambientData = new Uint8Array(dataArray ? dataArray.length : 128).fill(20);
+        const newParticle = createParticle(ambientData);
+        if (newParticle) particlesRef.current.push(newParticle);
+        lastParticleTimeRef.current = now;
+      }
+      
+      // Update and draw particles
+      particlesRef.current = particlesRef.current.filter(particle => {
+        // Increase life
+        particle.life += 1;
         
-        // Update pulse
-        bubble.pulse += bubble.pulseSpeed;
-        if (bubble.pulse > 1 || bubble.pulse < 0) bubble.pulseSpeed *= -1;
+        // Move particle
+        particle.y -= particle.speed;
+        particle.x += Math.sin(particle.life / 20) * 0.5; // Add slight horizontal movement
         
-        // Calculate opacity based on lifespan (fade in and out)
-        const lifeProgress = bubble.currentLife / bubble.lifespan;
-        const fadeInEnd = 0.1;
-        const fadeOutStart = 0.7;
+        // Rotate particle
+        particle.rotate += particle.rotateSpeed;
         
-        let calculatedOpacity;
-        if (lifeProgress < fadeInEnd) {
+        // Calculate opacity based on life (fade in and out)
+        const lifeRatio = particle.life / particle.maxLife;
+        
+        if (lifeRatio < 0.1) {
           // Fade in
-          calculatedOpacity = (lifeProgress / fadeInEnd) * bubble.opacity;
-        } else if (lifeProgress > fadeOutStart) {
+          particle.opacity = lifeRatio * 10 * particle.opacity;
+        } else if (lifeRatio > 0.8) {
           // Fade out
-          calculatedOpacity = (1 - ((lifeProgress - fadeOutStart) / (1 - fadeOutStart))) * bubble.opacity;
-        } else {
-          // Steady state with pulse
-          calculatedOpacity = bubble.opacity * (0.7 + 0.3 * Math.sin(bubble.pulse * Math.PI));
+          particle.opacity = particle.opacity * (1 - (lifeRatio - 0.8) / 0.2);
         }
         
-        // Draw bubble
-        ctx.beginPath();
-        const radius = bubble.size * (0.8 + 0.2 * Math.sin(bubble.pulse * Math.PI * 2));
+        // Draw the particle
+        drawParticle(ctx, particle);
         
-        // Create gradient for bubble
-        const gradient = ctx.createRadialGradient(
-          bubble.x, bubble.y, 0,
-          bubble.x, bubble.y, radius
-        );
-        
-        // Parse the bubble.color which is in rgba format
-        const colorMatch = bubble.color.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/);
-        if (colorMatch) {
-          const [_, r, g, b, a] = colorMatch;
-          
-          // Create gradient with transparency
-          gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${calculatedOpacity * 1.5})`);
-          gradient.addColorStop(0.6, `rgba(${r}, ${g}, ${b}, ${calculatedOpacity})`);
-          gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
-          
-          ctx.fillStyle = gradient;
-          ctx.arc(bubble.x, bubble.y, radius, 0, Math.PI * 2);
-          ctx.fill();
-          
-          // Add subtle highlight
-          ctx.beginPath();
-          ctx.arc(bubble.x - radius * 0.3, bubble.y - radius * 0.3, radius * 0.2, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(255, 255, 255, ${calculatedOpacity * 0.5})`;
-          ctx.fill();
-        }
-        
-        // Keep bubble if it's still alive and on screen
-        return bubble.currentLife < bubble.lifespan && bubble.y + bubble.size > 0;
+        // Keep particle if still alive
+        return particle.life < particle.maxLife;
       });
       
     } catch (err) {
@@ -274,10 +341,31 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Click handler to create particles on click
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!dataArray) return;
+    
+    // Create a burst of particles at click location
+    const burstCount = 5 + Math.floor(Math.random() * 5);
+    const clickPos = { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
+    
+    for (let i = 0; i < burstCount; i++) {
+      const newParticle = createParticle(
+        dataArray as unknown as Uint8Array<ArrayBuffer>, 
+        { 
+          x: clickPos.x + (Math.random() - 0.5) * 20, 
+          y: clickPos.y + (Math.random() - 0.5) * 20 
+        }
+      );
+      if (newParticle) particlesRef.current.push(newParticle);
+    }
+  };
+
   return (
     <canvas 
       ref={canvasRef} 
-      className="fixed top-0 left-0 w-full h-full -z-10 opacity-70"
+      className="fixed top-0 left-0 w-full h-full -z-10 cursor-default"
+      onClick={handleCanvasClick}
     />
   );
 };

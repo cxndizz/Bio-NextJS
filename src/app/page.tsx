@@ -49,17 +49,15 @@ const myMedia = [
 
 // 🔗 ลิงก์โซเชียล
 const myLinks = [
-  { href: "https://github.com", title: "GitHub", icon: <Github className="text-gray-300" /> },
-  { href: "https://twitter.com", title: "Twitter", icon: <Twitter className="text-sky-400" /> },
-  { href: "https://instagram.com", title: "Instagram", icon: <Instagram className="text-pink-500" /> },
-  { href: "https://youtube.com", title: "YouTube", icon: <Youtube className="text-red-500" /> },
-  { href: "https://spotify.com", title: "Spotify", icon: <Headphones className="text-green-500" /> },
+  { href: "https://github.com/cxndizz", title: "GitHub", icon: <Github className="text-gray-300" /> },
+  { href: "https://www.instagram.com/firstisalwayshappy", title: "Instagram", icon: <Instagram className="text-pink-500" /> },
+  { href: "https://open.spotify.com/user/31rvu54wd7fjhffnrnzqivwsjolu", title: "Spotify", icon: <Headphones className="text-green-500" /> },
 ];
 
 // 👤 ข้อมูลโปรไฟล์
 const profile = {
   name: "cxndizz",
-  bio: "Digital Creator | Photographer | Music Lover ✨",
+  bio: "Full Stack Developer | Next.js • Spring Boot • Oracle ✨",
   avatarUrl: "/profile.jpg", // ใส่รูปโปรไฟล์ที่ public/profile.jpg
 };
 

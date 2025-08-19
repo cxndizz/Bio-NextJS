@@ -6,7 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider"; // <-- import à¹€à¸
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "My Awesome Page",
+  title: "cxndizz world",
   description: "Welcome to my personal space",
 };
 

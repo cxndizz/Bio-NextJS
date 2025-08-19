@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
-  DialogClose
+  DialogClose,
+  DialogTitle
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
@@ -327,6 +328,14 @@ export function Gallery({ items }: GalleryProps) {
     }
   }, [modalOpen]);
 
+  // Get appropriate dialog title based on selected media
+  const getDialogTitle = () => {
+    if (!selectedMedia) return "Media Viewer";
+    return selectedMedia.type === 'image' 
+      ? `Photo ${currentIndex + 1} of ${galleryImages.length}` 
+      : `Video ${currentIndex + 1} of ${galleryVideos.length}`;
+  };
+
   // Loading state ขณะรอ mount
   if (!mounted) {
     return (
@@ -474,6 +483,11 @@ export function Gallery({ items }: GalleryProps) {
           }`}
           showCloseButton={false}
         >
+          {/* Add DialogTitle for accessibility - can be visually hidden */}
+          <DialogTitle className="sr-only">
+            {getDialogTitle()}
+          </DialogTitle>
+          
           {/* Fullscreen container */}
           <div 
             ref={galleryContainerRef}

@@ -36,6 +36,9 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
   const [mounted, setMounted] = useState(false);
   const [autoplayAttempted, setAutoplayAttempted] = useState(false);
   const [userInteracted, setUserInteracted] = useState(false);
+  const [isAudioReady, setIsAudioReady] = useState(false);
+  const [isTrackChanging, setIsTrackChanging] = useState(false);
+  const playbackPromiseRef = useRef<Promise<void> | null>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const { theme } = useTheme();
   
@@ -55,18 +58,6 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
     const handleUserInteraction = () => {
       setUserInteracted(true);
       
-      // Try to unmute and play if we're already in a playing state
-      if (isPlaying && audioRef.current) {
-        audioRef.current.muted = false;
-        audioRef.current.volume = volume;
-        
-        // Try to play again after unmuting
-        const playPromise = audioRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(e => console.log("Still can't play after user interaction:", e));
-        }
-      }
-      
       // Remove event listeners after first interaction
       document.removeEventListener('click', handleUserInteraction);
       document.removeEventListener('touchstart', handleUserInteraction);
@@ -82,9 +73,9 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
       document.removeEventListener('touchstart', handleUserInteraction);
       document.removeEventListener('keydown', handleUserInteraction);
     };
-  }, [mounted, userInteracted, isPlaying, audioRef, volume]);
+  }, [mounted, userInteracted]);
 
-  // Autoplay attempt - modified to use muted autoplay
+  // Autoplay attempt with safety measures
   useEffect(() => {
     if (!mounted || autoplayAttempted) return;
     
@@ -96,124 +87,177 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
           audioRef.current.muted = true;
           audioRef.current.volume = 0;
           
-          const playPromise = audioRef.current.play();
+          // Mark as attempted before we actually try to play
+          setAutoplayAttempted(true);
           
-          if (playPromise !== undefined) {
-            playPromise
-              .then(() => {
-                setIsPlaying(true);
-                if (onPlayingChange) onPlayingChange(true);
-              })
-              .catch(error => {
-                console.log("Muted autoplay prevented:", error);
-                // Reset playing state if autoplay fails
-                setIsPlaying(false);
-                if (onPlayingChange) onPlayingChange(false);
-              });
+          try {
+            await audioRef.current.play();
+            setIsPlaying(true);
+            if (onPlayingChange) onPlayingChange(true);
+          } catch (error) {
+            console.log("Muted autoplay prevented:", error);
+            setIsPlaying(false);
+            if (onPlayingChange) onPlayingChange(false);
           }
         }
       } catch (err) {
         console.log("Autoplay error:", err);
+        setAutoplayAttempted(true);
       }
-      
-      setAutoplayAttempted(true);
     };
     
     attemptAutoplay();
   }, [mounted, autoplayAttempted, audioRef, onPlayingChange]);
 
-  // Set up audio element when it's available
+  // Set up audio element event listeners
   useEffect(() => {
     if (!audioRef.current || !mounted) return;
     
     const audio = audioRef.current;
     
-    // Make sure the audio element has the correct attributes
-    audio.preload = "auto";
-    audio.src = currentSong.src;
+    // Event handlers
+    const handleCanPlay = () => {
+      setIsAudioReady(true);
+      
+      // If we should be playing and we're in the middle of a track change, 
+      // attempt to play now that the audio is ready
+      if (isPlaying && isTrackChanging && userInteracted) {
+        playTrack();
+        setIsTrackChanging(false);
+      }
+    };
     
-    // Add event listeners for error handling
-    const handleAudioError = (e: Event) => {
+    const handleLoadStart = () => {
+      setIsAudioReady(false);
+    };
+    
+    const handleError = (e: Event) => {
       console.error("Audio error:", e);
+      setIsAudioReady(false);
       setIsPlaying(false);
       if (onPlayingChange) onPlayingChange(false);
     };
     
-    audio.addEventListener('error', handleAudioError);
+    const handleEnded = () => {
+      handleNext();
+    };
+    
+    // Add event listeners
+    audio.addEventListener('canplay', handleCanPlay);
+    audio.addEventListener('loadstart', handleLoadStart);
+    audio.addEventListener('error', handleError);
+    audio.addEventListener('ended', handleEnded);
+    
+    // Make sure the audio element has the correct attributes
+    audio.preload = "auto";
+    
+    // First time setup
+    if (!audio.src) {
+      audio.src = currentSong.src;
+      audio.load();
+    }
     
     return () => {
-      audio.removeEventListener('error', handleAudioError);
+      // Clean up event listeners
+      audio.removeEventListener('canplay', handleCanPlay);
+      audio.removeEventListener('loadstart', handleLoadStart);
+      audio.removeEventListener('error', handleError);
+      audio.removeEventListener('ended', handleEnded);
     };
-  }, [audioRef, currentSong, mounted, onPlayingChange]);
+  }, [audioRef, currentSong, mounted, isPlaying, isTrackChanging, userInteracted, onPlayingChange]);
+
+  // Safe play function with promise handling
+  const playTrack = async () => {
+    if (!audioRef.current || !isAudioReady) return false;
+    
+    try {
+      // Cancel any existing playback attempt
+      if (playbackPromiseRef.current) {
+        await playbackPromiseRef.current.catch(() => {});
+        playbackPromiseRef.current = null;
+      }
+      
+      // Apply user settings if available
+      if (userInteracted) {
+        audioRef.current.muted = false;
+        audioRef.current.volume = volume;
+      }
+      
+      // Start new playback
+      const playPromise = audioRef.current.play();
+      playbackPromiseRef.current = playPromise;
+      
+      await playPromise;
+      if (onPlayingChange) onPlayingChange(true);
+      return true;
+    } catch (error) {
+      console.error("Error playing track:", error);
+      setIsPlaying(false);
+      if (onPlayingChange) onPlayingChange(false);
+      return false;
+    } finally {
+      playbackPromiseRef.current = null;
+    }
+  };
+
+  // Safely pause playback
+  const pauseTrack = () => {
+    if (!audioRef.current) return;
+    
+    try {
+      audioRef.current.pause();
+      if (onPlayingChange) onPlayingChange(false);
+    } catch (error) {
+      console.error("Error pausing track:", error);
+    }
+  };
 
   // Play/pause when state changes
   useEffect(() => {
-    if (!audioRef.current) return;
-    
-    const audio = audioRef.current;
+    if (!mounted || !audioRef.current) return;
     
     if (isPlaying) {
-      // If user has interacted, we can unmute and set volume
-      if (userInteracted) {
-        audio.muted = false;
-        audio.volume = volume;
+      if (isAudioReady && !isTrackChanging) {
+        playTrack();
       }
-      
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(e => {
-          console.error("Error playing audio:", e);
-          // If there's an error playing, reset the state
-          setIsPlaying(false);
-          if (onPlayingChange) onPlayingChange(false);
-        });
-      }
-      
-      if (onPlayingChange) onPlayingChange(true);
     } else {
-      audio.pause();
-      if (onPlayingChange) onPlayingChange(false);
+      pauseTrack();
     }
-  }, [isPlaying, userInteracted, audioRef, volume, onPlayingChange]);
+  }, [isPlaying, isAudioReady, isTrackChanging, mounted]);
   
   // Update track when changing songs
   useEffect(() => {
-    const audio = audioRef.current;
-    if (audio) {
-      // Stop any current playback
-      audio.pause();
+    if (!audioRef.current || !mounted) return;
+    
+    const changeTrack = async () => {
+      setIsTrackChanging(true);
       
-      // Load the new track
-      audio.src = currentSong.src;
-      audio.load();
-      
-      // If we should be playing, attempt to play
-      if (isPlaying) {
-        // If user has interacted, we can unmute
-        if (userInteracted) {
-          audio.muted = false;
-          audio.volume = volume;
-        }
+      try {
+        // First pause current playback
+        pauseTrack();
         
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(e => console.error("Error changing track:", e));
-        }
+        // Update the source
+        audioRef.current.src = currentSong.src;
+        audioRef.current.load();
+        
+        // isAudioReady will be set to true by the canplay event
+        // and then the playTrack effect will trigger if isPlaying is true
+      } catch (error) {
+        console.error("Error changing track:", error);
+        setIsPlaying(false);
+        setIsTrackChanging(false);
+        if (onPlayingChange) onPlayingChange(false);
       }
-    }
-  }, [currentSong, isPlaying, audioRef, userInteracted, volume]);
+    };
+    
+    changeTrack();
+  }, [currentSong, mounted]);
 
   // Playback control functions
   const handlePlayPause = () => {
     // Set userInteracted to true on manual play/pause
     setUserInteracted(true);
     setIsPlaying(!isPlaying);
-    
-    if (audioRef.current && !isPlaying) {
-      // Make sure audio is unmuted when manually playing
-      audioRef.current.muted = false;
-      audioRef.current.volume = volume;
-    }
   };
   
   const handleNext = () => {
@@ -436,7 +480,10 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
               variant="outline" 
               size="icon" 
               onClick={handlePlayPause}
-              className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 border-none text-white shadow-md hover:shadow-lg hover:opacity-90 transition-all"
+              disabled={isTrackChanging || !isAudioReady}
+              className={`h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 border-none text-white shadow-md hover:shadow-lg hover:opacity-90 transition-all ${
+                (isTrackChanging || !isAudioReady) ? 'opacity-60' : ''
+              }`}
             >
               {isPlaying ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
             </Button>
@@ -456,7 +503,7 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
           
           <div className="w-8 h-8 flex items-center justify-center">
             {/* Visualizer indicators */}
-            {isPlaying && (
+            {isPlaying && isAudioReady && !isTrackChanging && (
               <div className="flex items-end gap-0.5">
                 <div className={`w-1 rounded-full animate-[soundBounce_0.8s_ease-in-out_infinite] ${
                   isDark ? 'bg-indigo-400' : 'bg-indigo-500'
@@ -467,6 +514,15 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
                 <div className={`w-1 rounded-full animate-[soundBounce_0.6s_ease-in-out_infinite_0.1s] ${
                   isDark ? 'bg-indigo-400' : 'bg-indigo-500'
                 }`} style={{height: '12px'}}></div>
+              </div>
+            )}
+            
+            {/* Loading indicator */}
+            {isTrackChanging && (
+              <div className="flex items-center space-x-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></div>
+                <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" style={{animationDelay: '0.3s'}}></div>
+                <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" style={{animationDelay: '0.6s'}}></div>
               </div>
             )}
           </div>
@@ -527,7 +583,7 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
                       ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white'
                       : isDark ? 'bg-gray-700/50' : 'bg-white/40'
                   }`}>
-                    {currentTrackIndex === index && isPlaying ? (
+                    {currentTrackIndex === index && isPlaying && isAudioReady && !isTrackChanging ? (
                       <div className="flex items-center space-x-px">
                         <span className="w-0.5 h-2 bg-white rounded-full animate-[soundBounce_0.9s_ease-in-out_infinite]"></span>
                         <span className="w-0.5 h-1.5 bg-white rounded-full animate-[soundBounce_0.8s_ease-in-out_infinite_0.2s]"></span>
@@ -559,7 +615,6 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
       
       <audio 
         ref={audioRef} 
-        onEnded={handleNext}
         onTimeUpdate={handleTimeUpdate}
         onDurationChange={handleTimeUpdate}
         preload="auto"

@@ -33,7 +33,6 @@ export function VisitorCounter() {
         let currentData: VisitorData | null = null;
         
         try {
-          console.log("📊 Reading current visitor data from API...");
           const response = await fetch('/api/visitors', {
             method: 'GET',
             headers: {
@@ -43,12 +42,9 @@ export function VisitorCounter() {
           
           if (response.ok) {
             currentData = await response.json();
-            console.log("✅ Got current data:", currentData);
           } else {
-            console.log("⚠️ API GET failed, using fallback");
           }
         } catch (error) {
-          console.log("⚠️ API not available, using fallback:", error);
         }
 
         // === ขั้นตอนที่ 2: คำนวณจำนวนใหม่ ===
@@ -93,7 +89,6 @@ export function VisitorCounter() {
         
         // บันทึกผ่าน API
         try {
-          console.log("💾 Saving new data to API...");
           const saveResponse = await fetch('/api/visitors', {
             method: 'POST',
             headers: {
@@ -103,12 +98,9 @@ export function VisitorCounter() {
           });
           
           if (saveResponse.ok) {
-            console.log("✅ Successfully saved to API");
           } else {
-            console.log("⚠️ API POST failed, but localStorage saved");
           }
         } catch (error) {
-          console.log("⚠️ Could not save to API, but localStorage saved:", error);
         }
 
         // === ขั้นตอนที่ 5: อัปเดท UI ===
@@ -120,10 +112,8 @@ export function VisitorCounter() {
           setIsNew(false);
         }, 3000);
         
-        console.log(`🎉 Visitor count updated: ${newCount}`);
         
       } catch (error) {
-        console.error("❌ Error updating visitor count:", error);
         
         // ในกรณีที่เกิดข้อผิดพลาด ให้ใช้ข้อมูลจาก localStorage
         try {

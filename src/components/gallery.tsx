@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import { 
   Image as ImageIcon, Video, Play, X, 
   ChevronLeft, ChevronRight, Pause,
-  Maximize, Minimize, Download
+  Maximize, Minimize, Download, Heart, Share2,
+  Grid3x3, Layers, Eye, ZoomIn, ZoomOut, RotateCw
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -36,11 +37,16 @@ export function Gallery({ items }: GalleryProps) {
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [rotation, setRotation] = useState(0);
+  const [viewMode, setViewMode] = useState<'grid' | 'masonry' | 'carousel'>('grid');
+  const [filter, setFilter] = useState<'none' | 'grayscale' | 'sepia' | 'vintage'>('none');
   const videoRef = useRef<HTMLVideoElement>(null);
   const galleryContainerRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
   const { theme } = useTheme();
 
-  // ป้องกัน hydration error
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -49,7 +55,17 @@ export function Gallery({ items }: GalleryProps) {
   const galleryVideos = items.filter(item => item.type === 'video');
   const isDark = mounted ? theme === 'dark' : false;
 
-  // Handle opening media
+  // Advanced hover effect for gallery items
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>, index: number) => {
+    const card = e.currentTarget;
+    const rect = card.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    
+    card.style.setProperty('--mouse-x', `${x}%`);
+    card.style.setProperty('--mouse-y', `${y}%`);
+  };
+
   const openMedia = (item: MediaItem, index: number) => {
     if (videoRef.current) {
       videoRef.current.pause();
@@ -59,16 +75,11 @@ export function Gallery({ items }: GalleryProps) {
     setCurrentIndex(index);
     setModalOpen(true);
     setIsLoading(true);
+    setZoom(1);
+    setRotation(0);
     
-    // เมื่อเปิดวิดีโอ ให้เล่นทันทีเมื่อพร้อม
     if (item.type === 'video') {
-      // ตั้งค่าให้พยายามเล่นวิดีโอเมื่อโหลดเสร็จ
       setTimeout(() => {
-        if (videoRef.current && !videoRef.current.paused) {
-          // วิดีโอกำลังเล่นอยู่แล้ว
-          return;
-        }
-        
         if (videoRef.current) {
           const playPromise = videoRef.current.play();
           if (playPromise !== undefined) {
@@ -84,16 +95,14 @@ export function Gallery({ items }: GalleryProps) {
               });
           }
         }
-      }, 500); // รอให้วิดีโอโหลดสักครู่
+      }, 500);
     }
   };
 
-  // Navigation functions
   const goToNext = () => {
     const mediaList = selectedMedia?.type === 'image' ? galleryImages : galleryVideos;
     const nextIndex = (currentIndex + 1) % mediaList.length;
     
-    // Pause current video if playing
     if (selectedMedia?.type === 'video' && videoRef.current && isPlaying) {
       videoRef.current.pause();
     }
@@ -102,13 +111,14 @@ export function Gallery({ items }: GalleryProps) {
     setSelectedMedia(mediaList[nextIndex]);
     setIsLoading(true);
     setIsPlaying(false);
+    setZoom(1);
+    setRotation(0);
   };
 
   const goToPrev = () => {
     const mediaList = selectedMedia?.type === 'image' ? galleryImages : galleryVideos;
     const prevIndex = (currentIndex - 1 + mediaList.length) % mediaList.length;
     
-    // Pause current video if playing
     if (selectedMedia?.type === 'video' && videoRef.current && isPlaying) {
       videoRef.current.pause();
     }
@@ -117,9 +127,10 @@ export function Gallery({ items }: GalleryProps) {
     setSelectedMedia(mediaList[prevIndex]);
     setIsLoading(true);
     setIsPlaying(false);
+    setZoom(1);
+    setRotation(0);
   };
 
-  // Fullscreen toggle
   const toggleFullscreen = () => {
     if (galleryContainerRef.current) {
       if (!isFullscreen) {
@@ -136,7 +147,6 @@ export function Gallery({ items }: GalleryProps) {
     }
   };
 
-  // Video control functions with error handling
   const toggleVideoPlayback = () => {
     if (!videoRef.current) return;
     
@@ -145,9 +155,7 @@ export function Gallery({ items }: GalleryProps) {
         const playPromise = videoRef.current.play();
         if (playPromise !== undefined) {
           playPromise
-            .then(() => {
-              setIsPlaying(true);
-            })
+            .then(() => setIsPlaying(true))
             .catch(error => {
               console.error("Error playing video:", error);
               setIsPlaying(false);
@@ -163,146 +171,82 @@ export function Gallery({ items }: GalleryProps) {
     }
   };
 
-  // Auto-hide controls
-  const showControlsTemporarily = () => {
-    setShowControls(true);
-    
-    if (isFullscreen) {
-      const timer = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-      
-      return () => clearTimeout(timer);
+  const getFilterClass = () => {
+    switch (filter) {
+      case 'grayscale': return 'grayscale';
+      case 'sepia': return 'sepia';
+      case 'vintage': return 'sepia contrast-125 brightness-90';
+      default: return '';
     }
   };
 
-  // Handle fullscreen change events
-  useEffect(() => {
-    if (!mounted) return;
-    
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-      if (!document.fullscreenElement) {
-        setShowControls(true);
-      }
-    };
-    
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    };
-  }, [mounted]);
-
-  // Set up video event listeners
-  useEffect(() => {
-    const videoElement = videoRef.current;
-    if (!videoElement || !selectedMedia || selectedMedia.type !== 'video') return;
-    
-    const handleVideoError = (e: Event) => {
-      console.error("Video error:", e);
-      setIsPlaying(false);
-      setIsLoading(false);
-    };
-    
-    const handleCanPlay = () => {
-      setIsLoading(false);
-      // Auto-play when ready
-      try {
-        videoElement.play()
-          .then(() => setIsPlaying(true))
-          .catch(err => console.error("Auto-play failed:", err));
-      } catch (err) {
-        console.error("Error auto-playing:", err);
-      }
-    };
-    
-    const handlePlay = () => {
-      setIsPlaying(true);
-    };
-    
-    const handlePause = () => {
-      setIsPlaying(false);
-    };
-    
-    const handleEnded = () => {
-      setIsPlaying(false);
-    };
-    
-    // Add event listeners
-    videoElement.addEventListener('error', handleVideoError);
-    videoElement.addEventListener('canplay', handleCanPlay);
-    videoElement.addEventListener('loadeddata', handleCanPlay);
-    videoElement.addEventListener('play', handlePlay);
-    videoElement.addEventListener('pause', handlePause);
-    videoElement.addEventListener('ended', handleEnded);
-    
-    return () => {
-      // Remove event listeners
-      videoElement.removeEventListener('error', handleVideoError);
-      videoElement.removeEventListener('canplay', handleCanPlay);
-      videoElement.removeEventListener('loadeddata', handleCanPlay);
-      videoElement.removeEventListener('play', handlePlay);
-      videoElement.removeEventListener('pause', handlePause);
-      videoElement.removeEventListener('ended', handleEnded);
-    };
-  }, [videoRef.current, selectedMedia]);
-
-  // Handle keyboard navigation
-  useEffect(() => {
-    if (!mounted || !modalOpen) return;
-    
-    const handleKeyDown = (e: KeyboardEvent) => {
-      showControlsTemporarily();
+  // Gallery Item Component with advanced effects
+  const GalleryItem = ({ item, index, type }: { item: MediaItem, index: number, type: 'image' | 'video' }) => (
+    <div
+      className="gallery-item relative aspect-square group overflow-hidden rounded-2xl cursor-pointer transform transition-all duration-500 hover:scale-105 hover:z-10"
+      onClick={() => openMedia(item, index)}
+      onMouseMove={(e) => handleMouseMove(e, index)}
+      style={{
+        background: `radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(147, 51, 234, 0.15), transparent 50%)`
+      }}
+    >
+      {/* Animated border */}
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 opacity-0 group-hover:opacity-100 transition-opacity duration-500 -z-10 blur-sm"></div>
       
-      switch (e.key) {
-        case 'ArrowRight':
-          goToNext();
-          break;
-        case 'ArrowLeft':
-          goToPrev();
-          break;
-        case 'Escape':
-          if (isFullscreen) {
-            toggleFullscreen();
-          } else {
-            setModalOpen(false);
-          }
-          break;
-        case 'f':
-          toggleFullscreen();
-          break;
-        case ' ': // Space key
-          if (selectedMedia?.type === 'video') {
-            toggleVideoPlayback();
-            e.preventDefault(); // Prevent page scroll
-          }
-          break;
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [modalOpen, isFullscreen, selectedMedia, mounted]);
+      {/* Thumbnail */}
+      <img 
+        src={item.thumb} 
+        alt={`gallery-${type}-${index}`} 
+        className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out ${getFilterClass()}`}
+      />
+      
+      {/* Overlay gradient */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+        {/* Info overlay */}
+        <div className="absolute bottom-0 left-0 right-0 p-3 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {type === 'video' ? (
+                <>
+                  <Video className="w-4 h-4 text-white" />
+                  <span className="text-white text-sm font-medium">Video {index + 1}</span>
+                </>
+              ) : (
+                <>
+                  <ImageIcon className="w-4 h-4 text-white" />
+                  <span className="text-white text-sm font-medium">Photo {index + 1}</span>
+                </>
+              )}
+            </div>
+            <Eye className="w-4 h-4 text-white" />
+          </div>
+        </div>
+      </div>
+      
+      {/* Play button for videos */}
+      {type === 'video' && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border-2 border-white/30 group-hover:scale-110 transition-transform">
+            <Play className="text-white w-6 h-6 ml-1" />
+          </div>
+        </div>
+      )}
+      
+      {/* Glowing effect on hover */}
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-purple-500/30 rounded-full blur-2xl"></div>
+      </div>
+    </div>
+  );
 
-  // Get appropriate dialog title based on selected media
-  const getDialogTitle = () => {
-    if (!selectedMedia) return "Media Viewer";
-    return selectedMedia.type === 'image' 
-      ? `Photo ${currentIndex + 1} of ${galleryImages.length}` 
-      : `Video ${currentIndex + 1} of ${galleryVideos.length}`;
-  };
-
-  // Loading state ขณะรอ mount
   if (!mounted) {
     return (
       <div className="w-full max-w-md">
-        <div className="h-10 bg-gray-200 dark:bg-gray-700 rounded-xl mb-4 animate-pulse"></div>
-        <div className="bg-white/20 rounded-xl p-4">
-          <div className="grid grid-cols-3 gap-2">
+        <div className="h-12 bg-white/10 rounded-2xl mb-4 animate-pulse"></div>
+        <div className="backdrop-blur-2xl bg-white/10 rounded-3xl p-6">
+          <div className="grid grid-cols-3 gap-3">
             {[1,2,3,4,5,6].map(i => (
-              <div key={i} className="aspect-square bg-gray-300 dark:bg-gray-600 rounded-lg animate-pulse"></div>
+              <div key={i} className="aspect-square bg-white/10 rounded-2xl animate-pulse"></div>
             ))}
           </div>
         </div>
@@ -312,63 +256,69 @@ export function Gallery({ items }: GalleryProps) {
 
   return (
     <div className="w-full max-w-md">
+      {/* Advanced Tabs with glassmorphism */}
       <Tabs defaultValue="photos" className="w-full">
-        <TabsList className={`grid w-full grid-cols-2 ${
-          isDark 
-            ? 'bg-black/30 border-gray-800/40' 
-            : 'bg-white/30 border-white/20'
-        } border rounded-xl mb-4 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
-          <TabsTrigger value="photos" className={`
-            ${isDark 
-              ? 'data-[state=active]:bg-gray-800 data-[state=active]:text-foreground' 
-              : 'data-[state=active]:bg-white data-[state=active]:text-foreground'
-            }
-          `}>
-            <ImageIcon className="mr-2 h-4 w-4" />
-            Photos
-          </TabsTrigger>
-          <TabsTrigger value="videos" className={`
-            ${isDark 
-              ? 'data-[state=active]:bg-gray-800 data-[state=active]:text-foreground' 
-              : 'data-[state=active]:bg-white data-[state=active]:text-foreground'
-            }
-          `}>
-            <Video className="mr-2 h-4 w-4" />
-            Videos
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex items-center justify-between mb-4">
+          <TabsList className="backdrop-blur-2xl bg-white/10 dark:bg-black/20 border border-white/10 rounded-2xl p-1">
+            <TabsTrigger 
+              value="photos" 
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-500 data-[state=active]:text-white rounded-xl transition-all"
+            >
+              <ImageIcon className="mr-2 h-4 w-4" />
+              Photos
+            </TabsTrigger>
+            <TabsTrigger 
+              value="videos"
+              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-500 data-[state=active]:text-white rounded-xl transition-all"
+            >
+              <Video className="mr-2 h-4 w-4" />
+              Videos
+            </TabsTrigger>
+          </TabsList>
+          
+          {/* View mode switcher */}
+          <div className="flex gap-1 backdrop-blur-2xl bg-white/10 dark:bg-black/20 border border-white/10 rounded-xl p-1">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 rounded-lg transition-all ${
+                viewMode === 'grid' 
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' 
+                  : 'text-gray-400 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <Grid3x3 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('masonry')}
+              className={`p-1.5 rounded-lg transition-all ${
+                viewMode === 'masonry' 
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' 
+                  : 'text-gray-400 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
         
         {/* Photos Tab */}
         <TabsContent value="photos">
-          <Card className={`${
-            isDark 
-              ? 'bg-black/30 border-gray-800/40 shadow-lg shadow-purple-900/10' 
-              : 'bg-white/30 border-white/30 shadow-lg shadow-purple-500/5'
-          } backdrop-blur-md rounded-xl`}>
-            <CardContent className="p-4">
+          <Card className="backdrop-blur-2xl bg-white/10 dark:bg-black/20 border border-white/10 rounded-3xl shadow-2xl overflow-hidden">
+            <CardContent className="p-6">
               {galleryImages.length === 0 ? (
-                <div className="col-span-3 py-8 text-center text-gray-500">
-                  <ImageIcon className="mx-auto h-8 w-8 mb-2 opacity-50" />
-                  <p>No photos to display</p>
+                <div className="py-12 text-center">
+                  <ImageIcon className="mx-auto h-12 w-12 mb-3 text-gray-400" />
+                  <p className="text-gray-400">No photos to display</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-3 gap-2">
+                <div className={`
+                  ${viewMode === 'grid' ? 'grid grid-cols-3 gap-3' : ''}
+                  ${viewMode === 'masonry' ? 'columns-3 gap-3' : ''}
+                  ${viewMode === 'carousel' ? 'flex overflow-x-auto gap-3 snap-x snap-mandatory' : ''}
+                `}>
                   {galleryImages.map((item, index) => (
-                    <div 
-                      key={index} 
-                      className="relative aspect-square group overflow-hidden rounded-lg cursor-pointer transform transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/20 dark:hover:shadow-purple-500/10 hover:-translate-y-1"
-                      onClick={() => openMedia(item, index)}
-                    >
-                      <img 
-                        src={item.thumb} 
-                        alt={`gallery-photo-${index}`} 
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-in-out" 
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-2">
-                        <div className="w-7 h-7 rounded-full bg-white/30 backdrop-blur-sm flex items-center justify-center">
-                          <ImageIcon className="text-white w-3.5 h-3.5" />
-                        </div>
-                      </div>
+                    <div key={index} className={viewMode === 'masonry' ? 'mb-3' : ''}>
+                      <GalleryItem item={item} index={index} type="image" />
                     </div>
                   ))}
                 </div>
@@ -379,41 +329,22 @@ export function Gallery({ items }: GalleryProps) {
         
         {/* Videos Tab */}
         <TabsContent value="videos">
-          <Card className={`${
-            isDark 
-              ? 'bg-black/30 border-gray-800/40 shadow-lg shadow-purple-900/10' 
-              : 'bg-white/30 border-white/30 shadow-lg shadow-purple-500/5'
-          } backdrop-blur-md rounded-xl`}>
-            <CardContent className="p-4">
+          <Card className="backdrop-blur-2xl bg-white/10 dark:bg-black/20 border border-white/10 rounded-3xl shadow-2xl overflow-hidden">
+            <CardContent className="p-6">
               {galleryVideos.length === 0 ? (
-                <div className="col-span-3 py-8 text-center text-gray-500">
-                  <Video className="mx-auto h-8 w-8 mb-2 opacity-50" />
-                  <p>No videos to display</p>
+                <div className="py-12 text-center">
+                  <Video className="mx-auto h-12 w-12 mb-3 text-gray-400" />
+                  <p className="text-gray-400">No videos to display</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-3 gap-2">
+                <div className={`
+                  ${viewMode === 'grid' ? 'grid grid-cols-3 gap-3' : ''}
+                  ${viewMode === 'masonry' ? 'columns-3 gap-3' : ''}
+                  ${viewMode === 'carousel' ? 'flex overflow-x-auto gap-3 snap-x snap-mandatory' : ''}
+                `}>
                   {galleryVideos.map((item, index) => (
-                    <div 
-                      key={index} 
-                      className="relative aspect-square group overflow-hidden rounded-lg cursor-pointer transform transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/20 dark:hover:shadow-purple-500/10 hover:-translate-y-1" 
-                      onClick={() => openMedia(item, index)}
-                    >
-                      <img 
-                        src={item.thumb} 
-                        alt={`gallery-video-${index}`} 
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-in-out" 
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/60 group-hover:opacity-80 transition-opacity flex items-center justify-center">
-                        <div className="h-10 w-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30 group-hover:scale-110 transition-transform">
-                          <Play className="text-white w-5 h-5 ml-0.5" />
-                        </div>
-                        <div className="absolute bottom-2 left-2">
-                          <div className="flex items-center gap-1">
-                            <Video className="text-white w-3.5 h-3.5" />
-                            <span className="text-white text-xs">Video {index + 1}</span>
-                          </div>
-                        </div>
-                      </div>
+                    <div key={index} className={viewMode === 'masonry' ? 'mb-3' : ''}>
+                      <GalleryItem item={item} index={index} type="video" />
                     </div>
                   ))}
                 </div>
@@ -423,7 +354,7 @@ export function Gallery({ items }: GalleryProps) {
         </TabsContent>
       </Tabs>
 
-      {/* Enhanced Media Viewer Modal */}
+      {/* Advanced Media Viewer Modal */}
       <Dialog open={modalOpen} onOpenChange={(open) => {
         setModalOpen(open);
         if (!open) {
@@ -435,35 +366,92 @@ export function Gallery({ items }: GalleryProps) {
         }
       }}>
         <DialogContent 
-          className={`bg-gray-900/95 border-gray-800 text-white p-0 rounded-xl ${
-            isFullscreen ? 'max-w-none w-screen h-screen rounded-none' : 'max-w-4xl'
+          className={`bg-black/95 backdrop-blur-3xl border-gray-800 text-white p-0 rounded-3xl ${
+            isFullscreen ? 'max-w-none w-screen h-screen rounded-none' : 'max-w-5xl'
           }`}
           showCloseButton={false}
         >
-          {/* Add DialogTitle for accessibility - can be visually hidden */}
           <DialogTitle className="sr-only">
-            {getDialogTitle()}
+            {selectedMedia?.type === 'image' 
+              ? `Photo ${currentIndex + 1} of ${galleryImages.length}` 
+              : `Video ${currentIndex + 1} of ${galleryVideos.length}`}
           </DialogTitle>
           
           {/* Fullscreen container */}
           <div 
             ref={galleryContainerRef}
             className={`relative flex flex-col ${isFullscreen ? 'h-screen' : ''}`}
-            onMouseMove={showControlsTemporarily}
+            onMouseMove={() => setShowControls(true)}
           >
-            {/* Controls overlay (conditionally shown) */}
+            {/* Advanced controls overlay */}
             <div className={`absolute inset-0 z-10 transition-opacity duration-300 ${
               showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
             }`}>
               {/* Top control bar */}
-              <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/70 to-transparent">
+              <div className="absolute top-0 left-0 right-0 p-6 bg-gradient-to-b from-black/80 to-transparent">
                 <div className="flex justify-between items-center">
-                  <div className="text-sm text-white/90">
-                    {selectedMedia?.type === 'image' ? 'Photo' : 'Video'} {currentIndex + 1} of {selectedMedia?.type === 'image' ? galleryImages.length : galleryVideos.length}
+                  <div className="flex items-center gap-4">
+                    <div className="text-white">
+                      <p className="text-sm opacity-70">
+                        {selectedMedia?.type === 'image' ? 'Photo' : 'Video'}
+                      </p>
+                      <p className="text-xl font-bold">
+                        {currentIndex + 1} / {selectedMedia?.type === 'image' ? galleryImages.length : galleryVideos.length}
+                      </p>
+                    </div>
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    {/* Download button */}
+                    {/* Advanced image controls */}
+                    {selectedMedia?.type === 'image' && (
+                      <>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => setZoom(Math.min(zoom + 0.25, 3))}
+                          className="h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm text-white hover:bg-white/20"
+                        >
+                          <ZoomIn className="h-5 w-5" />
+                        </Button>
+                        
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => setZoom(Math.max(zoom - 0.25, 0.5))}
+                          className="h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm text-white hover:bg-white/20"
+                        >
+                          <ZoomOut className="h-5 w-5" />
+                        </Button>
+                        
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => setRotation(rotation + 90)}
+                          className="h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm text-white hover:bg-white/20"
+                        >
+                          <RotateCw className="h-5 w-5" />
+                        </Button>
+                      </>
+                    )}
+                    
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => setIsLiked(!isLiked)}
+                      className="h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm text-white hover:bg-white/20"
+                    >
+                      <Heart className={`h-5 w-5 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
+                    </Button>
+                    
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => {}}
+                      className="h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm text-white hover:bg-white/20"
+                    >
+                      <Share2 className="h-5 w-5" />
+                    </Button>
+                    
                     <Button 
                       variant="ghost" 
                       size="icon" 
@@ -475,113 +463,106 @@ export function Gallery({ items }: GalleryProps) {
                           link.click();
                         }
                       }}
-                      className="h-8 w-8 rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white"
+                      className="h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm text-white hover:bg-white/20"
                     >
-                      <Download className="h-4 w-4" />
+                      <Download className="h-5 w-5" />
                     </Button>
                     
-                    {/* Fullscreen toggle */}
                     <Button 
                       variant="ghost" 
                       size="icon" 
                       onClick={toggleFullscreen}
-                      className="h-8 w-8 rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white"
+                      className="h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm text-white hover:bg-white/20"
                     >
-                      {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+                      {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
                     </Button>
                     
-                    {/* Close button */}
                     <DialogClose asChild>
                       <Button 
                         variant="ghost" 
                         size="icon" 
-                        className="h-8 w-8 rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white"
+                        className="h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm text-white hover:bg-white/20"
                       >
-                        <X className="h-4 w-4" />
+                        <X className="h-5 w-5" />
                       </Button>
                     </DialogClose>
                   </div>
                 </div>
               </div>
               
-              {/* Navigation arrows */}
-              <div className="absolute inset-0 flex items-center justify-between px-4 pointer-events-none">
+              {/* Navigation arrows with magnetic effect */}
+              <div className="absolute inset-0 flex items-center justify-between px-6 pointer-events-none">
                 <Button 
                   variant="ghost" 
                   size="icon" 
                   onClick={goToPrev}
-                  className="h-10 w-10 rounded-full bg-black/30 text-white/90 hover:bg-black/50 hover:text-white pointer-events-auto"
+                  className="h-14 w-14 rounded-full bg-white/10 backdrop-blur-sm text-white hover:bg-white/20 hover:scale-110 transition-all pointer-events-auto"
                 >
-                  <ChevronLeft className="h-6 w-6" />
+                  <ChevronLeft className="h-8 w-8" />
                 </Button>
                 
                 <Button 
                   variant="ghost" 
                   size="icon" 
                   onClick={goToNext}
-                  className="h-10 w-10 rounded-full bg-black/30 text-white/90 hover:bg-black/50 hover:text-white pointer-events-auto"
+                  className="h-14 w-14 rounded-full bg-white/10 backdrop-blur-sm text-white hover:bg-white/20 hover:scale-110 transition-all pointer-events-auto"
                 >
-                  <ChevronRight className="h-6 w-6" />
+                  <ChevronRight className="h-8 w-8" />
                 </Button>
               </div>
               
-              {/* Video playback controls - only for video */}
+              {/* Video controls */}
               {selectedMedia?.type === 'video' && (
-                <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent">
-                  <div className="flex justify-center items-center">
+                <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent">
+                  <div className="flex justify-center">
                     <Button 
                       variant="ghost" 
                       size="icon" 
                       onClick={toggleVideoPlayback}
-                      className="h-12 w-12 rounded-full bg-black/40 text-white hover:bg-black/60 pointer-events-auto opacity-50 hover:opacity-100"
+                      className="h-16 w-16 rounded-full bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 hover:scale-110 transition-all"
                     >
-                      {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6 ml-0.5" />}
+                      {isPlaying ? <Pause className="h-8 w-8" /> : <Play className="h-8 w-8 ml-1" />}
                     </Button>
                   </div>
-                </div>
-              )}
-              
-              {/* Bottom info bar in fullscreen */}
-              {isFullscreen && (
-                <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent pointer-events-none">
-                  <p className="text-xs text-white/70 text-center">
-                    ← → arrows to navigate • Space to play/pause • F for fullscreen • ESC to exit
-                  </p>
                 </div>
               )}
             </div>
             
             {/* Content area */}
-            <div className="flex-1 flex items-center justify-center overflow-hidden" onClick={showControlsTemporarily}>
-              {/* Loading indicator */}
+            <div className="flex-1 flex items-center justify-center overflow-hidden p-6">
+              {/* Loading animation */}
               {isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-10">
-                  <div className="flex space-x-2">
-                    <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
-                    <div className="w-2 h-2 rounded-full bg-white animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                    <div className="w-2 h-2 rounded-full bg-white animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-10">
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-full border-4 border-purple-500 border-t-transparent animate-spin"></div>
+                    <div className="absolute inset-0 w-16 h-16 rounded-full border-4 border-pink-500 border-t-transparent animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
                   </div>
                 </div>
               )}
               
-              {/* Image display */}
+              {/* Image display with transforms */}
               {selectedMedia?.type === 'image' && (
                 <img 
+                  ref={imageRef}
                   src={selectedMedia.src} 
-                  className={`max-h-[70vh] ${isFullscreen ? 'max-h-screen' : ''} w-auto object-contain transition-transform duration-500 ${
+                  className={`max-h-full w-auto object-contain transition-all duration-500 ${
                     isLoading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
-                  }`}
+                  } ${getFilterClass()}`}
+                  style={{
+                    transform: `scale(${zoom}) rotate(${rotation}deg)`,
+                    transition: 'transform 0.3s ease'
+                  }}
                   alt="Gallery image"
                   onLoad={() => setIsLoading(false)}
                 />
               )}
               
-              {/* Video display - ปรับปรุงการโหลดวิดีโอ */}
+              {/* Video display */}
               {selectedMedia?.type === 'video' && (
                 <video 
                   ref={videoRef}
                   src={selectedMedia.src} 
-                  className={`max-h-[70vh] ${isFullscreen ? 'max-h-screen' : ''} w-auto object-contain transition-transform duration-500 ${
+                  className={`max-h-full w-auto object-contain transition-all duration-500 ${
                     isLoading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
                   }`}
                   preload="auto"
@@ -593,7 +574,6 @@ export function Gallery({ items }: GalleryProps) {
                   controls={false}
                   onCanPlay={() => {
                     setIsLoading(false);
-                    // เล่นวิดีโอทันทีเมื่อโหลดเสร็จ
                     if (videoRef.current && videoRef.current.paused) {
                       videoRef.current.play()
                         .then(() => setIsPlaying(true))
@@ -604,21 +584,23 @@ export function Gallery({ items }: GalleryProps) {
               )}
             </div>
             
-            {/* Thumbnail navigation */}
+            {/* Advanced thumbnail navigation with 3D effect */}
             {!isFullscreen && (
-              <div className="px-4 py-3 border-t border-gray-800/50">
+              <div className="px-6 py-4 bg-black/50 backdrop-blur-xl border-t border-white/10">
                 <div className="flex justify-center">
-                  <div className="flex gap-2 overflow-x-auto max-w-full py-1 px-3 -mx-3 scrollbar-thin">
+                  <div className="flex gap-2 overflow-x-auto max-w-full py-2 px-4 -mx-4 scrollbar-thin">
                     {(selectedMedia?.type === 'image' ? galleryImages : galleryVideos).map((item, idx) => (
                       <div 
                         key={idx} 
-                        className={`w-14 h-14 flex-shrink-0 rounded-md overflow-hidden cursor-pointer transition-all border-2 ${
+                        className={`relative w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden cursor-pointer transition-all transform ${
                           idx === currentIndex 
-                            ? 'border-purple-500 scale-110 shadow-lg shadow-purple-500/30' 
-                            : 'border-transparent opacity-60 hover:opacity-100'
+                            ? 'scale-125 z-10 ring-2 ring-purple-500 shadow-xl shadow-purple-500/50' 
+                            : 'opacity-60 hover:opacity-100 hover:scale-110'
                         }`}
+                        style={{
+                          transform: idx === currentIndex ? 'translateY(-8px)' : 'translateY(0)'
+                        }}
                         onClick={() => {
-                          // Pause current video if playing before switching
                           if (selectedMedia?.type === 'video' && videoRef.current && isPlaying) {
                             videoRef.current.pause();
                           }
@@ -634,6 +616,9 @@ export function Gallery({ items }: GalleryProps) {
                           alt={`thumbnail-${idx}`} 
                           className="w-full h-full object-cover"
                         />
+                        {idx === currentIndex && (
+                          <div className="absolute inset-0 bg-gradient-to-t from-purple-600/50 to-transparent"></div>
+                        )}
                       </div>
                     ))}
                   </div>

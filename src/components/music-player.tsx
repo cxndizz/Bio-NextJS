@@ -5,7 +5,8 @@ import {
   Play, Pause, SkipBack, SkipForward, 
   Volume2, VolumeX, Music, 
   ChevronUp, ChevronDown, 
-  List, X, Volume1
+  List, X, Volume1, Heart, Share2, Repeat, Shuffle,
+  Disc, Waves, Radio
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,16 +34,18 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
   const [showPlaylist, setShowPlaylist] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
+  const [repeat, setRepeat] = useState<'none' | 'one' | 'all'>('all');
+  const [shuffle, setShuffle] = useState(false);
+  const [visualizerMode, setVisualizerMode] = useState<'bars' | 'wave' | 'disc'>('bars');
   const progressBarRef = useRef<HTMLDivElement>(null);
   const { theme } = useTheme();
   
   const currentSong = playlist[currentTrackIndex];
   
-  // ป้องกัน hydration error
   useEffect(() => {
     setMounted(true);
     
-    // ตั้งค่าเริ่มต้นของ audio element
     if (audioRef.current) {
       audioRef.current.volume = volume;
       audioRef.current.src = currentSong.src;
@@ -52,7 +55,7 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
   
   const isDark = mounted ? theme === 'dark' : false;
 
-  // Set up audio element event listeners
+  // Audio event listeners
   useEffect(() => {
     if (!audioRef.current || !mounted) return;
     
@@ -64,8 +67,15 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
     };
     
     const handleEnded = () => {
-      // ทันทีที่เพลงจบ ให้เล่นเพลงถัดไปโดยอัตโนมัติ
-      handleNext();
+      if (repeat === 'one') {
+        audio.currentTime = 0;
+        audio.play();
+      } else if (repeat === 'all' || shuffle) {
+        handleNext();
+      } else {
+        setIsPlaying(false);
+        if (onPlayingChange) onPlayingChange(false);
+      }
     };
     
     const handlePlay = () => {
@@ -78,39 +88,31 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
       if (onPlayingChange) onPlayingChange(false);
     };
     
-    // Add event listeners
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('play', handlePlay);
     audio.addEventListener('pause', handlePause);
     
     return () => {
-      // Remove event listeners
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('play', handlePlay);
       audio.removeEventListener('pause', handlePause);
     };
-  }, [audioRef, mounted, onPlayingChange]);
+  }, [audioRef, mounted, onPlayingChange, repeat, shuffle]);
 
-  // Update track when changing songs
+  // Update track
   useEffect(() => {
     if (!audioRef.current || !mounted) return;
     
     const wasPlaying = isPlaying;
     
     try {
-      // Pause current playback
       audioRef.current.pause();
-      
-      // Change source
       audioRef.current.src = currentSong.src;
-      
-      // Set autoplay to ensure tracks play sequentially
       audioRef.current.autoplay = wasPlaying;
       audioRef.current.load();
       
-      // Resume playback if it was playing
       if (wasPlaying) {
         const playPromise = audioRef.current.play();
         if (playPromise !== undefined) {
@@ -128,7 +130,6 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
     }
   }, [currentSong, mounted]);
 
-  // Playback control functions
   const handlePlayPause = () => {
     if (!audioRef.current) return;
     
@@ -147,9 +148,12 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
   };
   
   const handleNext = () => {
-    console.log("Moving to next track");
-    setCurrentTrackIndex((prev) => (prev + 1) % playlist.length);
-    // ถ้าไม่ได้เล่นอยู่ ให้เริ่มเล่น
+    if (shuffle) {
+      const nextIndex = Math.floor(Math.random() * playlist.length);
+      setCurrentTrackIndex(nextIndex);
+    } else {
+      setCurrentTrackIndex((prev) => (prev + 1) % playlist.length);
+    }
     if (!isPlaying) setIsPlaying(true);
   };
 
@@ -202,200 +206,198 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
     audioRef.current.muted = newMutedState;
   };
 
-  const togglePlaylist = () => {
-    setShowPlaylist(!showPlaylist);
+  const toggleRepeat = () => {
+    const modes: Array<'none' | 'one' | 'all'> = ['none', 'one', 'all'];
+    const currentIndex = modes.indexOf(repeat);
+    setRepeat(modes[(currentIndex + 1) % modes.length]);
   };
 
-  const toggleExpanded = () => {
-    setExpanded(!expanded);
-    if (expanded) setShowPlaylist(false);
-  };
-
-  // Format time as mm:ss
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
   };
 
-  // Loading state
+  // Advanced Visualizer Component
+  const Visualizer = () => {
+    if (visualizerMode === 'bars') {
+      return (
+        <div className="flex items-end gap-1 h-8">
+          {[...Array(8)].map((_, i) => (
+            <div
+              key={i}
+              className={`w-1 rounded-full ${
+                isPlaying 
+                  ? 'bg-gradient-to-t from-purple-500 to-pink-500 animate-[soundBounce_0.8s_ease-in-out_infinite]' 
+                  : 'bg-gray-600'
+              }`}
+              style={{
+                height: isPlaying ? `${20 + Math.random() * 60}%` : '20%',
+                animationDelay: `${i * 0.1}s`
+              }}
+            />
+          ))}
+        </div>
+      );
+    } else if (visualizerMode === 'wave') {
+      return (
+        <div className="relative h-8 w-full overflow-hidden">
+          <Waves className={`w-full h-full ${isPlaying ? 'text-purple-500 animate-pulse' : 'text-gray-600'}`} />
+        </div>
+      );
+    } else {
+      return (
+        <div className="relative h-8 w-8">
+          <Disc className={`w-full h-full ${isPlaying ? 'text-purple-500 animate-spin' : 'text-gray-600'}`} />
+        </div>
+      );
+    }
+  };
+
   if (!mounted) {
     return (
-      <Card className="w-full max-w-md backdrop-blur-md bg-white/20 border-white/30 rounded-xl overflow-hidden">
-        <div className="px-3 py-2.5">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <div className="size-7 rounded-full flex items-center justify-center bg-gray-700/50">
-                <Music className="w-3 h-3 text-white" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="h-4 bg-gray-300 rounded animate-pulse mb-1"></div>
-                <div className="h-3 bg-gray-200 rounded animate-pulse w-20"></div>
-              </div>
-            </div>
-          </div>
+      <Card className="w-full max-w-md backdrop-blur-2xl bg-white/10 dark:bg-black/20 border-white/10 rounded-3xl overflow-hidden">
+        <div className="p-6">
+          <div className="h-48 bg-gray-300/20 rounded-2xl animate-pulse"></div>
         </div>
       </Card>
     );
   }
 
   return (
-    <Card className={`w-full max-w-md transition-all duration-300 ease-in-out backdrop-blur-md
-      ${isDark 
-        ? 'bg-black/20 border-gray-800/40 shadow-lg shadow-purple-900/10' 
-        : 'bg-white/20 border-white/30 shadow-lg shadow-purple-500/5'
-      } rounded-xl overflow-hidden relative`}
+    <Card className={`w-full max-w-md transition-all duration-500 ease-in-out
+      backdrop-blur-2xl bg-white/10 dark:bg-black/20 border border-white/10
+      rounded-3xl overflow-hidden relative shadow-2xl hover:shadow-3xl
+      ${expanded ? 'scale-105' : ''}`}
     >
-      {/* Minimal Player */}
-      <div className="px-3 py-2.5 transition-all duration-300">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <div className={`size-7 rounded-full flex items-center justify-center
-              ${isPlaying 
-                ? 'bg-gradient-to-br from-indigo-500 to-purple-500 animate-pulse'
-                : isDark ? 'bg-gray-700/50' : 'bg-gray-500/30'
-              }`}
-            >
-              <Music className="w-3 h-3 text-white" />
-            </div>
-            
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-medium truncate">{currentSong.title}</h3>
-              <p className={`text-xs truncate ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                {currentSong.artist}
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-1.5">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={togglePlaylist}
-              className={`h-7 w-7 ${isDark 
-                ? 'text-gray-400 hover:text-purple-400' 
-                : 'text-gray-600 hover:text-purple-500'
-              }`}
-            >
-              {showPlaylist ? <X className="h-3.5 w-3.5" /> : <List className="h-3.5 w-3.5" />}
-            </Button>
-            
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={toggleExpanded}
-              className={`h-7 w-7 ${isDark 
-                ? 'text-gray-400 hover:text-purple-400' 
-                : 'text-gray-600 hover:text-purple-500'
-              }`}
-            >
-              {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-            </Button>
-          </div>
+      {/* Animated background gradient */}
+      <div className="absolute inset-0 bg-gradient-to-br from-purple-600/10 via-pink-600/10 to-blue-600/10 animate-gradient-shift opacity-50"></div>
+      
+      {/* Main Player */}
+      <div className="relative p-6 transition-all duration-300">
+        
+        
+        {/* Track Info */}
+        <div className="text-center mb-6">
+          <h3 className="text-2xl font-bold text-white mb-1 truncate">
+            {currentSong.title}
+          </h3>
+          <p className="text-gray-400 text-sm">
+            {currentSong.artist}
+          </p>
         </div>
         
-        {/* Progress Bar */}
-        <div className="mb-2">
+        {/* Progress Bar - Advanced Design */}
+        <div className="mb-6">
           <div 
             ref={progressBarRef}
-            className={`h-1.5 w-full rounded-full overflow-hidden cursor-pointer ${
-              isDark ? 'bg-gray-700/50' : 'bg-gray-200'
-            }`}
+            className="relative h-2 bg-white/10 rounded-full overflow-hidden cursor-pointer group"
             onClick={handleProgressClick}
           >
+            {/* Background glow */}
+            <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 opacity-20"></div>
+            
+            {/* Progress fill */}
             <div 
-              className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+              className="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-300"
               style={{ width: `${(currentTime / duration) * 100 || 0}%` }}
-            ></div>
+            >
+              {/* Progress glow */}
+              <div className="absolute inset-0 bg-gradient-to-r from-purple-400 to-pink-400 blur-sm"></div>
+            </div>
+            
+            {/* Progress handle */}
+            <div 
+              className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ left: `${(currentTime / duration) * 100 || 0}%`, marginLeft: '-8px' }}
+            >
+              <div className="absolute inset-0 bg-white rounded-full animate-ping"></div>
+            </div>
           </div>
           
-          <div className="flex justify-between mt-1">
-            <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-              {formatTime(currentTime)}
-            </span>
-            <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-              {formatTime(duration)}
-            </span>
+          <div className="flex justify-between mt-2">
+            <span className="text-xs text-gray-400">{formatTime(currentTime)}</span>
+            <span className="text-xs text-gray-400">{formatTime(duration)}</span>
           </div>
         </div>
         
-        {/* Main Controls */}
-        <div className="flex items-center justify-between">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={toggleMute}
-            className={`h-8 w-8 rounded-full ${
-              isMuted 
-                ? 'text-orange-500 hover:text-orange-400' 
-                : isDark 
-                  ? 'text-gray-400 hover:text-purple-400' 
-                  : 'text-gray-600 hover:text-purple-500'
-            }`}
-          >
-            {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-          </Button>
-          
-          <div className="flex items-center gap-1">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={handlePrev}
-              className={`h-8 w-8 rounded-full ${isDark 
-                ? 'text-gray-400 hover:text-purple-400' 
-                : 'text-gray-600 hover:text-purple-500'
+        {/* Advanced Controls */}
+        <div className="space-y-4">
+          {/* Main controls */}
+          <div className="flex items-center justify-between">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShuffle(!shuffle)}
+              className={`rounded-full transition-all ${
+                shuffle 
+                  ? 'text-purple-400 bg-purple-400/20' 
+                  : 'text-gray-400 hover:text-white hover:bg-white/10'
               }`}
             >
-              <SkipBack size={16} />
+              <Shuffle size={18} />
             </Button>
             
-            <Button 
-              variant="outline" 
-              size="icon" 
-              onClick={handlePlayPause}
-              className={`h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 border-none text-white shadow-md hover:shadow-lg hover:opacity-90 transition-all`}
-            >
-              {isPlaying ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handlePrev}
+                className="rounded-full text-gray-300 hover:text-white hover:bg-white/10 transition-all hover:scale-110"
+              >
+                <SkipBack size={20} />
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handlePlayPause}
+                className="h-14 w-14 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 border-none text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all"
+              >
+                {isPlaying ? <Pause size={24} /> : <Play size={24} className="ml-0.5" />}
+              </Button>
+              
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleNext}
+                className="rounded-full text-gray-300 hover:text-white hover:bg-white/10 transition-all hover:scale-110"
+              >
+                <SkipForward size={20} />
+              </Button>
+            </div>
             
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={handleNext}
-              className={`h-8 w-8 rounded-full ${isDark 
-                ? 'text-gray-400 hover:text-purple-400' 
-                : 'text-gray-600 hover:text-purple-500'
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleRepeat}
+              className={`rounded-full transition-all ${
+                repeat !== 'none' 
+                  ? 'text-purple-400 bg-purple-400/20' 
+                  : 'text-gray-400 hover:text-white hover:bg-white/10'
               }`}
             >
-              <SkipForward size={16} />
+              <Repeat size={18} />
+              {repeat === 'one' && (
+                <span className="absolute -top-1 -right-1 text-xs bg-purple-500 rounded-full w-4 h-4 flex items-center justify-center">
+                  1
+                </span>
+              )}
             </Button>
           </div>
           
-          <div className="w-8 h-8 flex items-center justify-center">
-            {/* Visualizer indicators */}
-            {isPlaying && (
-              <div className="flex items-end gap-0.5">
-                <div className={`w-1 rounded-full animate-[soundBounce_0.8s_ease-in-out_infinite] ${
-                  isDark ? 'bg-indigo-400' : 'bg-indigo-500'
-                }`} style={{height: '10px'}}></div>
-                <div className={`w-1 rounded-full animate-[soundBounce_1s_ease-in-out_infinite_0.2s] ${
-                  isDark ? 'bg-purple-400' : 'bg-purple-500'
-                }`} style={{height: '16px'}}></div>
-                <div className={`w-1 rounded-full animate-[soundBounce_0.6s_ease-in-out_infinite_0.1s] ${
-                  isDark ? 'bg-indigo-400' : 'bg-indigo-500'
-                }`} style={{height: '12px'}}></div>
-              </div>
-            )}
-          </div>
-        </div>
-        
-        {/* Expanded Controls */}
-        <div className={`overflow-hidden transition-all duration-300 ${
-          expanded ? 'max-h-20 opacity-100 mt-2' : 'max-h-0 opacity-0'
-        }`}>
-          <div className="flex items-center justify-center pt-1 pb-2">
-            <div className="w-full max-w-[180px]">
+          {/* Secondary controls */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleMute}
+                className="rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+              >
+                {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              </Button>
+              
               <input
                 type="range"
                 min="0"
@@ -403,71 +405,97 @@ export function MusicPlayer({ playlist, audioRef, onPlayingChange }: MusicPlayer
                 step="0.01"
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
-                className={`w-full h-1.5 rounded-full appearance-none cursor-pointer
-                  ${isDark ? 'bg-gray-700/50' : 'bg-gray-200'}
+                className="w-20 h-1 rounded-full appearance-none cursor-pointer bg-white/10
                   [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3
-                  [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-gradient-to-r 
-                  [&::-webkit-slider-thumb]:from-indigo-500 [&::-webkit-slider-thumb]:to-purple-500`}
+                  [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white
+                  [&::-webkit-slider-thumb]:shadow-lg hover:[&::-webkit-slider-thumb]:scale-125 transition-all"
               />
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsLiked(!isLiked)}
+                className="rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+              >
+                <Heart size={18} className={isLiked ? 'fill-red-500 text-red-500' : ''} />
+              </Button>
+              
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowPlaylist(!showPlaylist)}
+                className="rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+              >
+                {showPlaylist ? <X size={18} /> : <List size={18} />}
+              </Button>
+              
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {}}
+                className="rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+              >
+                <Share2 size={18} />
+              </Button>
             </div>
           </div>
         </div>
       </div>
       
-      {/* Playlist */}
-      <div className={`overflow-hidden transition-all duration-300 ${
-        showPlaylist ? 'max-h-[240px]' : 'max-h-0'
+      {/* Advanced Playlist */}
+      <div className={`overflow-hidden transition-all duration-500 ${
+        showPlaylist ? 'max-h-[300px]' : 'max-h-0'
       }`}>
-        <div className={`${isDark ? 'bg-black/30' : 'bg-white/30'} border-t ${
-          isDark ? 'border-gray-800/40' : 'border-white/20'
-        }`}>
-          <div className="py-2 px-3">
-            <p className={`text-xs font-medium mb-1.5 ${
-              isDark ? 'text-gray-400' : 'text-gray-600'
-            }`}>PLAYLIST</p>
-            <div className="max-h-[200px] overflow-y-auto pr-1 scrollbar-thin">
+        <div className="bg-black/30 backdrop-blur-xl border-t border-white/10">
+          <div className="p-4">
+            <p className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">
+              Now Playing • {playlist.length} Tracks
+            </p>
+            <div className="max-h-[240px] overflow-y-auto space-y-1 scrollbar-thin">
               {playlist.map((song, index) => (
-                <div 
+                <div
                   key={index}
                   onClick={() => selectTrack(index)}
-                  className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
-                    currentTrackIndex === index
-                      ? isDark 
-                        ? 'bg-indigo-500/10' 
-                        : 'bg-indigo-100/50'
-                      : isDark 
-                        ? 'hover:bg-gray-800/30' 
-                        : 'hover:bg-white/40'
-                  }`}
+                  className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all
+                    ${currentTrackIndex === index
+                      ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30'
+                      : 'hover:bg-white/5 border border-transparent'
+                    }`}
                 >
-                  <div className={`size-6 rounded-full flex items-center justify-center ${
+                  {/* Track number or playing indicator */}
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                     currentTrackIndex === index
-                      ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white'
-                      : isDark ? 'bg-gray-700/50' : 'bg-white/40'
+                      ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
+                      : 'bg-white/10 text-gray-400'
                   }`}>
                     {currentTrackIndex === index && isPlaying ? (
-                      <div className="flex items-center space-x-px">
-                        <span className="w-0.5 h-2 bg-white rounded-full animate-[soundBounce_0.9s_ease-in-out_infinite]"></span>
-                        <span className="w-0.5 h-1.5 bg-white rounded-full animate-[soundBounce_0.8s_ease-in-out_infinite_0.2s]"></span>
-                        <span className="w-0.5 h-2.5 bg-white rounded-full animate-[soundBounce_1.2s_ease-in-out_infinite_0.6s]"></span>
+                      <div className="flex items-center gap-px">
+                        <span className="w-0.5 h-3 bg-white rounded-full animate-[soundBounce_0.8s_ease-in-out_infinite]"></span>
+                        <span className="w-0.5 h-2 bg-white rounded-full animate-[soundBounce_0.8s_ease-in-out_infinite_0.2s]"></span>
+                        <span className="w-0.5 h-3.5 bg-white rounded-full animate-[soundBounce_0.8s_ease-in-out_infinite_0.4s]"></span>
                       </div>
                     ) : (
-                      <Play size={12} className="ml-0.5" />
+                      <span className="text-xs font-bold">{index + 1}</span>
                     )}
                   </div>
                   
                   <div className="flex-grow min-w-0">
-                    <p className={`truncate text-sm ${
+                    <p className={`truncate text-sm font-medium ${
                       currentTrackIndex === index 
-                        ? isDark ? 'text-indigo-400 font-medium' : 'text-indigo-600 font-medium' 
-                        : isDark ? 'text-gray-300' : 'text-gray-700'
+                        ? 'text-white' 
+                        : 'text-gray-300'
                     }`}>
                       {song.title}
                     </p>
-                    <p className={`truncate text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <p className="truncate text-xs text-gray-500">
                       {song.artist}
                     </p>
                   </div>
+                  
+                  {/* Duration placeholder */}
+                  <span className="text-xs text-gray-500">3:24</span>
                 </div>
               ))}
             </div>

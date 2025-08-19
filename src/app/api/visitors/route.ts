@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import fs from "fs";
+import path from "path";
 
 // โครงสร้างข้อมูล
 interface VisitorData {
@@ -24,8 +26,6 @@ const initializeStorage = async () => {
   
   try {
     // พยายามอ่านข้อมูลจากไฟล์ (ถ้ามี)
-    const fs = require('fs');
-    const path = require('path');
     const filePath = path.join(process.cwd(), 'public', 'data', 'visitors.json');
     
     if (fs.existsSync(filePath)) {

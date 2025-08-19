@@ -17,20 +17,20 @@ import { useRef, useState } from "react";
 // 🎵 เพลง: นำไฟล์ .mp3 ไปไว้ที่ public/music/
 const myPlaylist = [
   { 
-    title: "TIMETHAI - ไม่อยากให้เป็นเขา", 
-    artist: "TIMETHAI", 
+    title: "ไม่อยากให้เป็นเขา", 
+    artist: "Timethai", 
     src: "/music/TIMETHAI.mp3" 
   },
   { 
-    title: "Jazzy Frenchy", 
-    artist: "Bensound", 
-    src: "/music/bensound-jazzyfrenchy.mp3" 
+    title: "รอที่เส้นขอบฟ้า", 
+    artist: "PUN",
+    src: "/music/SKY.mp3" 
   },
   { 
-    title: "Sunny", 
-    artist: "Bensound", 
-    src: "/music/bensound-sunny.mp3" 
-  },
+    title: "Living Death",
+    artist: "PUN", 
+    src: "/music/night.mp3" 
+  }
 ];
 
 // 🖼️ รูปภาพ & วิดีโอ: นำไฟล์ไปไว้ที่ public/gallery/
@@ -41,9 +41,10 @@ const myMedia = [
   { type: 'image' as const, src: "/gallery/4.jpg", thumb: "/gallery/4.jpg" },
   { type: 'image' as const, src: "/gallery/5.jpg", thumb: "/gallery/5.jpg" },
   { type: 'image' as const, src: "/gallery/6.jpg", thumb: "/gallery/6.jpg" },
-  { type: 'video' as const, src: "/gallery/video1.mp4", thumb: "/gallery/thumb1.jpg" },
-  { type: 'video' as const, src: "/gallery/video2.mp4", thumb: "/gallery/thumb2.jpg" },
-  { type: 'video' as const, src: "/gallery/video3.mp4", thumb: "/gallery/thumb3.jpg" },
+
+  { type: 'video' as const, src: "/gallery/1.mp4", thumb: "/gallery/8.jpg" },
+  { type: 'video' as const, src: "/gallery/2.mp4", thumb: "/gallery/9.jpg" },
+  { type: 'video' as const, src: "/gallery/3.mp4", thumb: "/gallery/10.jpg" },
 ];
 
 // 🔗 ลิงก์โซเชียล

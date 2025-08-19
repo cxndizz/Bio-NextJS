@@ -1,5 +1,9 @@
 "use client"
 
+/**
+ * ปุ่มสลับธีม (Dark/Light Mode)
+ */
+
 import * as React from "react"
 import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
@@ -13,7 +17,7 @@ export function ThemeToggle() {
       variant="outline"
       size="icon"
       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="bg-transparent border-white/50 text-white hover:bg-white/20 hover:text-white"
+      className="bg-white/10 backdrop-blur-md border-white/20 dark:border-gray-800/50 text-gray-700 dark:text-gray-300 hover:bg-white/20 dark:hover:bg-gray-800/50 rounded-full shadow-lg"
     >
       <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
       <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />

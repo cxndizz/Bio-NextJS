@@ -36,6 +36,7 @@ export function Gallery({ items }: GalleryProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [autoplayEnabled, setAutoplayEnabled] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isVideoReady, setIsVideoReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const autoplayTimerRef = useRef<NodeJS.Timeout | null>(null);
   const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -57,6 +58,8 @@ export function Gallery({ items }: GalleryProps) {
     setCurrentIndex(index);
     setModalOpen(true);
     setIsLoading(true);
+    setIsVideoReady(false);
+    setIsPlaying(false);
     
     // Reset autoplay state
     setAutoplayEnabled(false);
@@ -69,9 +72,17 @@ export function Gallery({ items }: GalleryProps) {
   const goToNext = () => {
     const mediaList = selectedMedia?.type === 'image' ? galleryImages : galleryVideos;
     const nextIndex = (currentIndex + 1) % mediaList.length;
+    
+    // Pause current video if playing
+    if (selectedMedia?.type === 'video' && videoRef.current && isPlaying) {
+      videoRef.current.pause();
+    }
+    
     setCurrentIndex(nextIndex);
     setSelectedMedia(mediaList[nextIndex]);
     setIsLoading(true);
+    setIsVideoReady(false);
+    setIsPlaying(false);
     
     // Reset autoplay timer when manually navigating
     if (autoplayEnabled && autoplayTimerRef.current) {
@@ -83,9 +94,17 @@ export function Gallery({ items }: GalleryProps) {
   const goToPrev = () => {
     const mediaList = selectedMedia?.type === 'image' ? galleryImages : galleryVideos;
     const prevIndex = (currentIndex - 1 + mediaList.length) % mediaList.length;
+    
+    // Pause current video if playing
+    if (selectedMedia?.type === 'video' && videoRef.current && isPlaying) {
+      videoRef.current.pause();
+    }
+    
     setCurrentIndex(prevIndex);
     setSelectedMedia(mediaList[prevIndex]);
     setIsLoading(true);
+    setIsVideoReady(false);
+    setIsPlaying(false);
     
     // Reset autoplay timer when manually navigating
     if (autoplayEnabled && autoplayTimerRef.current) {
@@ -136,16 +155,31 @@ export function Gallery({ items }: GalleryProps) {
     }
   };
 
-  // Video control functions
+  // Video control functions with error handling
   const toggleVideoPlayback = () => {
-    if (videoRef.current) {
+    if (!videoRef.current || !isVideoReady) return;
+    
+    try {
       if (videoRef.current.paused) {
-        videoRef.current.play();
-        setIsPlaying(true);
+        const playPromise = videoRef.current.play();
+        
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              setIsPlaying(true);
+            })
+            .catch(error => {
+              console.error("Error playing video:", error);
+              setIsPlaying(false);
+            });
+        }
       } else {
         videoRef.current.pause();
         setIsPlaying(false);
       }
+    } catch (error) {
+      console.error("Video playback error:", error);
+      setIsPlaying(false);
     }
   };
 
@@ -194,9 +228,11 @@ export function Gallery({ items }: GalleryProps) {
     };
   }, [autoplayEnabled, isLoading, selectedMedia]);
 
-  // Handle video ended event
+  // Set up video event listeners
   useEffect(() => {
     const videoElement = videoRef.current;
+    
+    if (!videoElement) return;
     
     const handleVideoEnded = () => {
       setIsPlaying(false);
@@ -205,18 +241,33 @@ export function Gallery({ items }: GalleryProps) {
       }
     };
     
-    if (videoElement) {
-      videoElement.addEventListener('ended', handleVideoEnded);
-      videoElement.addEventListener('play', () => setIsPlaying(true));
-      videoElement.addEventListener('pause', () => setIsPlaying(false));
-    }
+    const handleVideoError = (e: Event) => {
+      console.error("Video error:", e);
+      setIsPlaying(false);
+      setIsLoading(false);
+    };
+    
+    const handleCanPlay = () => {
+      setIsVideoReady(true);
+      setIsLoading(false);
+    };
+    
+    // Add event listeners
+    videoElement.addEventListener('ended', handleVideoEnded);
+    videoElement.addEventListener('play', () => setIsPlaying(true));
+    videoElement.addEventListener('pause', () => setIsPlaying(false));
+    videoElement.addEventListener('error', handleVideoError);
+    videoElement.addEventListener('canplay', handleCanPlay);
+    videoElement.addEventListener('loadeddata', handleCanPlay);
     
     return () => {
-      if (videoElement) {
-        videoElement.removeEventListener('ended', handleVideoEnded);
-        videoElement.removeEventListener('play', () => setIsPlaying(true));
-        videoElement.removeEventListener('pause', () => setIsPlaying(false));
-      }
+      // Remove event listeners
+      videoElement.removeEventListener('ended', handleVideoEnded);
+      videoElement.removeEventListener('play', () => setIsPlaying(true));
+      videoElement.removeEventListener('pause', () => setIsPlaying(false));
+      videoElement.removeEventListener('error', handleVideoError);
+      videoElement.removeEventListener('canplay', handleCanPlay);
+      videoElement.removeEventListener('loadeddata', handleCanPlay);
     };
   }, [videoRef.current, autoplayEnabled]);
 
@@ -259,7 +310,7 @@ export function Gallery({ items }: GalleryProps) {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [modalOpen, isFullscreen, selectedMedia, mounted]);
+  }, [modalOpen, isFullscreen, selectedMedia, mounted, isVideoReady]);
 
   // Clean up timers when closing modal
   useEffect(() => {
@@ -272,6 +323,7 @@ export function Gallery({ items }: GalleryProps) {
       }
       setAutoplayEnabled(false);
       setIsPlaying(false);
+      setIsVideoReady(false);
     }
   }, [modalOpen]);
 
@@ -413,6 +465,7 @@ export function Gallery({ items }: GalleryProps) {
             videoRef.current.pause();
           }
           setAutoplayEnabled(false);
+          setIsVideoReady(false);
         }
       }}>
         <DialogContent 
@@ -527,6 +580,7 @@ export function Gallery({ items }: GalleryProps) {
                       variant="ghost" 
                       size="icon" 
                       onClick={toggleVideoPlayback}
+                      disabled={!isVideoReady}
                       className="h-12 w-12 rounded-full bg-black/40 text-white hover:bg-black/60 pointer-events-auto"
                     >
                       {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6 ml-0.5" />}
@@ -578,10 +632,12 @@ export function Gallery({ items }: GalleryProps) {
                   className={`max-h-[70vh] ${isFullscreen ? 'max-h-screen' : ''} w-auto object-contain transition-transform duration-500 ${
                     isLoading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
                   }`}
-                  onLoadedData={() => setIsLoading(false)}
+                  preload="auto"
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleVideoPlayback();
+                    if (isVideoReady) {
+                      toggleVideoPlayback();
+                    }
                   }}
                   playsInline // Important for mobile
                 />
@@ -602,9 +658,16 @@ export function Gallery({ items }: GalleryProps) {
                             : 'border-transparent opacity-60 hover:opacity-100'
                         }`}
                         onClick={() => {
+                          // Pause current video if playing before switching
+                          if (selectedMedia?.type === 'video' && videoRef.current && isPlaying) {
+                            videoRef.current.pause();
+                            setIsPlaying(false);
+                          }
+                          
                           setCurrentIndex(idx);
                           setSelectedMedia(item);
                           setIsLoading(true);
+                          setIsVideoReady(false);
                         }}
                       >
                         <img 

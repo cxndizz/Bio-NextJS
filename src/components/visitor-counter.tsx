@@ -32,42 +32,45 @@ export function VisitorCounter() {
           return btoa(browserInfo + screenInfo).slice(0, 32);
         };
 
-        const visitorId = generateVisitorId();
-        const storedVisitors = localStorage.getItem('site_visitors') || '{}';
-        let visitors: Record<string, number> = {};
+        // กำหนดค่าเริ่มต้นในกรณีที่ localStorage ไม่ทำงาน
+        let totalVisitors = 42; // ค่าสวยๆ เป็น fallback
+        let isNewVisitor = false;
         
+        // ทดลองใช้วิธีอื่นแทน localStorage เพื่อเก็บข้อมูลผู้เข้าชมชั่วคราว
+        const visitorId = generateVisitorId();
+        
+        // ใช้ sessionStorage แทน localStorage (จะหายเมื่อปิด browser แต่ไม่เป็นไรเพราะเป็นเพียงตัวอย่าง)
         try {
-          visitors = JSON.parse(storedVisitors);
-        } catch (e) {
-          visitors = {};
+          const sessionData = sessionStorage.getItem('visit_count') || '0';
+          const lastVisitor = sessionStorage.getItem('last_visitor') || '';
+          
+          totalVisitors = parseInt(sessionData, 10);
+          
+          if (lastVisitor !== visitorId) {
+            // New visitor
+            totalVisitors++;
+            sessionStorage.setItem('visit_count', totalVisitors.toString());
+            sessionStorage.setItem('last_visitor', visitorId);
+            isNewVisitor = true;
+          }
+        } catch (storageError) {
+          // ถ้า sessionStorage ไม่ทำงาน ใช้ค่า fallback
+          console.log('Storage not available:', storageError);
         }
         
-        // Calculate total visitors
-        const totalVisitors = Object.keys(visitors).length;
+        setCount(totalVisitors);
+        setIsNew(isNewVisitor);
         
-        // Check if this is a new visitor
-        if (!visitors[visitorId]) {
-          visitors[visitorId] = Date.now();
-          localStorage.setItem('site_visitors', JSON.stringify(visitors));
-          setIsNew(true);
-          
-          // Update count with new visitor
-          setCount(totalVisitors + 1);
-          
-          // Animation for new visitor
+        // Animation for new visitor
+        if (isNewVisitor) {
           setTimeout(() => {
             setIsNew(false);
           }, 3000);
-        } else {
-          // Just update last visit time
-          visitors[visitorId] = Date.now();
-          localStorage.setItem('site_visitors', JSON.stringify(visitors));
-          setCount(totalVisitors);
         }
       } catch (error) {
-        // Fallback ถ้าไม่สามารถใช้ localStorage ได้
-        console.log('localStorage not available, using fallback count');
-        setCount(42); // ใส่เลขสวยๆ เป็น fallback
+        // Fallback ถ้าเกิดข้อผิดพลาดใดๆ
+        console.log('Counter error, using fallback:', error);
+        setCount(42);
       }
     };
 

@@ -32,7 +32,8 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
-  const [dataArray, setDataArray] = useState<Uint8Array<ArrayBuffer> | null>(null);
+  // ไม่ต้องระบุ type parameter ให้กับ Uint8Array
+  const [dataArray, setDataArray] = useState<Uint8Array | null>(null);
   const [source, setSource] = useState<MediaElementAudioSourceNode | null>(null);
   const animationRef = useRef<number | null>(null);
   const particlesRef = useRef<Particle[]>([]);
@@ -40,6 +41,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
   const particleIdCounter = useRef<number>(0);
   const [mounted, setMounted] = useState(false);
   const { theme } = useTheme();
+  const audioContextRef = useRef<AudioContext | null>(null);
   
   // ป้องกัน hydration error
   useEffect(() => {
@@ -50,44 +52,52 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
   useEffect(() => {
     if (!audioRef.current || !mounted) return;
 
-    try {
-      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-      const context = new AudioContext();
-      const analyzerNode = context.createAnalyser();
-      analyzerNode.fftSize = 512;
-      analyzerNode.smoothingTimeConstant = 0.7;
-      
-      const bufferLength = analyzerNode.frequencyBinCount;
-      // ✅ สร้าง ArrayBuffer แล้วใช้ Uint8Array แบบเฉพาะเจาะจง
-      const buffer = new ArrayBuffer(bufferLength);
-      const dataArr = new Uint8Array(buffer) as Uint8Array<ArrayBuffer>;
-      
-      const sourceNode = context.createMediaElementSource(audioRef.current);
-      sourceNode.connect(analyzerNode);
-      analyzerNode.connect(context.destination);
-      
-      setAudioContext(context);
-      setAnalyser(analyzerNode);
-      setDataArray(dataArr);
-      setSource(sourceNode);
-    } catch (err) {
-      console.error("Error initializing audio context:", err);
-    }
-
-    return () => {
+    // Clean up function to properly disconnect and close AudioContext
+    const cleanupAudio = () => {
       if (source) {
         source.disconnect();
       }
       if (analyser) {
         analyser.disconnect();
       }
-      if (audioContext) {
-        audioContext.close();
-      }
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(err => console.error("Error closing AudioContext:", err));
       }
     };
+
+    try {
+      // Check if we already have an AudioContext before creating a new one
+      if (!audioContextRef.current) {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        audioContextRef.current = new AudioContext();
+        setAudioContext(audioContextRef.current);
+      }
+      
+      const context = audioContextRef.current;
+      const analyzerNode = context.createAnalyser();
+      analyzerNode.fftSize = 512;
+      analyzerNode.smoothingTimeConstant = 0.7;
+      
+      const bufferLength = analyzerNode.frequencyBinCount;
+      const dataArr = new Uint8Array(bufferLength);
+      
+      // Only create a new source node if we don't already have one
+      // or if the audio element has changed
+      if (!source) {
+        const sourceNode = context.createMediaElementSource(audioRef.current);
+        sourceNode.connect(analyzerNode);
+        analyzerNode.connect(context.destination);
+        setSource(sourceNode);
+      }
+      
+      setAnalyser(analyzerNode);
+      setDataArray(dataArr);
+
+    } catch (err) {
+      console.error("Error initializing audio context:", err);
+    }
+
+    return cleanupAudio;
   }, [audioRef, mounted]);
 
   // Get theme-appropriate colors
@@ -119,18 +129,8 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
         ];
   };
 
-  // ✅ สร้าง helper function สำหรับสร้าง Uint8Array ที่ type-safe
-  const createTypedArray = (length: number, fillValue?: number): Uint8Array<ArrayBuffer> => {
-    const buffer = new ArrayBuffer(length);
-    const typedArray = new Uint8Array(buffer) as Uint8Array<ArrayBuffer>;
-    if (fillValue !== undefined) {
-      typedArray.fill(fillValue);
-    }
-    return typedArray;
-  };
-
   // Create a beautiful bubble particle
-  const createParticle = (frequencyData: Uint8Array<ArrayBuffer>, canvas: HTMLCanvasElement, forcePosition?: {x: number, y: number}) => {
+  const createParticle = (frequencyData: Uint8Array, canvas: HTMLCanvasElement, forcePosition?: {x: number, y: number}) => {
     const colors = getThemeColors();
     
     // สุ่มตำแหน่งเริ่มต้น
@@ -262,9 +262,19 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
     ctx.restore();
   };
 
+  // Create fallback data array when analyzer is not available
+  const createFallbackData = (size: number): Uint8Array => {
+    const result = new Uint8Array(size);
+    for (let i = 0; i < size; i++) {
+      // Create some random values for a nice visual effect even without audio
+      result[i] = Math.floor(20 + Math.random() * 40);
+    }
+    return result;
+  };
+
   // Animation function
   const animate = () => {
-    if (!canvasRef.current || !analyser || !dataArray || !mounted) {
+    if (!canvasRef.current || !mounted) {
       animationRef.current = requestAnimationFrame(animate);
       return;
     }
@@ -279,17 +289,26 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
       
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      // ✅ ใช้ type-safe method สำหรับ getByteFrequencyData
-      try {
-        analyser.getByteFrequencyData(dataArray);
-      } catch (err) {
-        console.error("Error getting frequency data:", err);
+      // Use analyzer data if available, otherwise use fallback
+      let frequencyData: Uint8Array;
+      
+      if (analyser && dataArray) {
+        try {
+          // ใช้ Type Assertion เพื่อแก้ปัญหา Type Error
+          analyser.getByteFrequencyData(dataArray as any);
+          frequencyData = dataArray;
+        } catch (err) {
+          console.error("Error getting frequency data:", err);
+          frequencyData = createFallbackData(128);
+        }
+      } else {
+        frequencyData = createFallbackData(128);
       }
       
       const now = Date.now();
       
-      const sum = Array.from(dataArray).reduce((acc, val) => acc + val, 0);
-      const avg = sum / dataArray.length;
+      const sum = Array.from(frequencyData).reduce((acc, val) => acc + val, 0);
+      const avg = sum / frequencyData.length;
       
       if (isPlaying) {
         let generationRate = 80;
@@ -300,14 +319,14 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
         else generationRate = 120;
         
         if (now - lastParticleTimeRef.current > generationRate) {
-          const newParticle = createParticle(dataArray, canvas);
+          const newParticle = createParticle(frequencyData, canvas);
           if (newParticle) {
             particlesRef.current.push(newParticle);
           }
           
           if (avg > 120) {
             for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) {
-              const burstParticle = createParticle(dataArray, canvas);
+              const burstParticle = createParticle(frequencyData, canvas);
               if (burstParticle) {
                 particlesRef.current.push(burstParticle);
               }
@@ -318,8 +337,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
         }
       } else {
         if (particlesRef.current.length < 5 && now - lastParticleTimeRef.current > 2000) {
-          // ✅ ใช้ helper function ที่ type-safe
-          const ambientData = createTypedArray(dataArray.length, 20);
+          const ambientData = createFallbackData(128);
           const ambientParticle = createParticle(ambientData, canvas);
           if (ambientParticle) {
             particlesRef.current.push(ambientParticle);
@@ -393,7 +411,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
 
   // Click handler to create burst of bubbles
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!dataArray || !mounted) return;
+    if (!mounted) return;
     
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -403,11 +421,14 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ audioRef, isPlaying }
       y: e.clientY - rect.top 
     };
     
+    // Use fallback data if analyzer is not available
+    const freqData = dataArray || createFallbackData(128);
+    
     for (let i = 0; i < 8; i++) {
       const offsetX = (Math.random() - 0.5) * 100;
       const offsetY = (Math.random() - 0.5) * 100;
       const newParticle = createParticle(
-        dataArray, 
+        freqData, 
         canvasRef.current!,
         { 
           x: clickPos.x + offsetX, 

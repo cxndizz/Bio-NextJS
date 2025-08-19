@@ -65,14 +65,40 @@ const profile = {
 
 // --- หน้าเว็บหลัก ---
 export default function Home() {
-  const audioRef = useRef<HTMLAudioElement>(null!);
+  // แก้ไข Type Error: ใช้ unknown as HTMLAudioElement เพื่อให้ตรงกับ RefObject<HTMLAudioElement>
+  const audioRef = useRef<HTMLAudioElement>(null as unknown as HTMLAudioElement);
   const [isPlaying, setIsPlaying] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [userInteracted, setUserInteracted] = useState(false);
 
   // ป้องกัน hydration error
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Listen for user interaction to enable audio features
+  useEffect(() => {
+    if (!mounted) return;
+
+    const handleUserInteraction = () => {
+      setUserInteracted(true);
+      
+      // Remove event listeners after first interaction
+      document.removeEventListener('click', handleUserInteraction);
+      document.removeEventListener('touchstart', handleUserInteraction);
+      document.removeEventListener('keydown', handleUserInteraction);
+    };
+
+    document.addEventListener('click', handleUserInteraction);
+    document.addEventListener('touchstart', handleUserInteraction);
+    document.addEventListener('keydown', handleUserInteraction);
+
+    return () => {
+      document.removeEventListener('click', handleUserInteraction);
+      document.removeEventListener('touchstart', handleUserInteraction);
+      document.removeEventListener('keydown', handleUserInteraction);
+    };
+  }, [mounted]);
 
   // ส่งค่า state เหล่านี้ให้ MusicPlayer และ AudioVisualizer
   const handlePlayingStateChange = (playing: boolean) => {
